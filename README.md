@@ -7,3 +7,4 @@
 
 [![Anurag's GitHub stats](https://github-readme-stats.vercel.app/api?username=jackal998&hide=issues&count_private=true&show_icons=true&theme=algolia)](https://github.com/anuraghazra/github-readme-stats)
 
+[![willianrod's wakatime stats](https://github-readme-stats.vercel.app/api/wakatime?username=jackal998)](https://github.com/anuraghazra/github-readme-stats)
