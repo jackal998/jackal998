@@ -15,7 +15,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { buildStats, rankLanguages } from './aggregate.mjs';
-import { fetchActivity, fetchStack } from './fetch.mjs';
+import { fetchActivity, fetchStack, tokenScopes } from './fetch.mjs';
 import { assertNoLeak } from './guard.mjs';
 import { formatNumber, formatShare, renderReceipt } from './render.mjs';
 
@@ -47,7 +47,8 @@ async function loadRaw() {
   const now = new Date();
   const activity = await fetchActivity({ token: process.env.GITHUB_TOKEN, login: args.login, now });
   const stack = await fetchStack({ sources: stackSources(), login: args.login, now });
-  return { profile: PROFILE, login: args.login, generatedAt: now.toISOString(), activity, stack };
+  const readTokenScopes = process.env.READ_TOKEN ? await tokenScopes(process.env.READ_TOKEN) : undefined;
+  return { profile: PROFILE, login: args.login, generatedAt: now.toISOString(), activity, stack, readTokenScopes };
 }
 
 // Aggregates only: Actions logs of a public repository are public.
@@ -60,8 +61,15 @@ function summaryLines(raw, stats) {
   if (c.private === 0) {
     log('Note: no private contributions reported. Enable "Private contributions" in the profile\'s contribution settings to include them.');
   }
+  if (raw.readTokenScopes !== undefined) {
+    log(`READ_TOKEN scopes: ${raw.readTokenScopes === null ? '(not a classic token)' : raw.readTokenScopes || '(none)'}`);
+  }
   for (const s of raw.stack.log ?? []) {
-    log(`Stack source "${s.label}": ${s.repos} repositories (${s.privateRepos} private), ${s.commits} commits read`);
+    log(`Stack source "${s.label}": ${s.repos} repositories read (${s.privateRepos} private), ${s.commits} commits read` +
+      (s.skipped ? `; ${s.skipped} skipped as unreadable${s.ssoBlocked ? ` (${s.ssoBlocked} need SSO authorisation)` : ''}` : ''));
+  }
+  if (raw.readTokenScopes !== undefined && !raw.stack.privateRepos) {
+    log('READ_TOKEN read no private repositories: it needs the `repo` scope, and SSO authorisation for organisation repositories.');
   }
   const s = stats.stack;
   log(`Stack: ${formatNumber(s.commits)} commits, ${formatNumber(s.lines)} lines changed${s.capped ? ' (capped to the most recent commits)' : ''}`);

@@ -45,7 +45,11 @@ async function request(token, url, init, { sensitive }) {
       (res.status === 403 && (retryAfter > 0 || res.headers.get('x-ratelimit-remaining') === '0'));
     // Private repository names can appear in error bodies; keep them out of public logs.
     const detail = sensitive ? '' : `: ${(await res.text()).slice(0, 500)}`;
-    lastError = new Error(`GitHub API HTTP ${res.status}${detail}`);
+    lastError = Object.assign(new Error(`GitHub API HTTP ${res.status}${detail}`), {
+      status: res.status,
+      // Set when an organisation's SAML SSO has not authorised this token.
+      sso: res.headers.has('x-github-sso'),
+    });
     if (!(limited || res.status >= 500) || attempt === ATTEMPTS) break;
 
     const wait = retryAfter ? retryAfter * 1000 : limited && reset ? reset * 1000 - Date.now() + 1000 : 2000 * attempt;
@@ -75,6 +79,13 @@ export async function graphql(token, query, variables, { sensitive = false } = {
 async function rest(token, path, { sensitive = false } = {}) {
   const res = await request(token, `${API}${path}`, { method: 'GET', headers: { 'X-GitHub-Api-Version': '2022-11-28' } }, { sensitive });
   return res.json();
+}
+
+// The scopes a classic token was granted (null for other token types). Scope
+// names are not secret, and they tell whether private repositories are reachable.
+export async function tokenScopes(token) {
+  const res = await request(token, `${API}/user`, { method: 'GET', headers: {} }, { sensitive: true });
+  return res.headers.get('x-oauth-scopes');
 }
 
 // --- Activity: contribution totals per year --------------------------------
@@ -159,6 +170,19 @@ async function pool(items, limit, fn) {
 
 const repoPath = (nameWithOwner) => nameWithOwner.split('/').map(encodeURIComponent).join('/');
 
+// A repository the token can list but not read (no access, SSO not
+// authorised, empty, blocked) is skipped instead of failing the whole run.
+const UNREADABLE = new Set([403, 404, 409, 451]);
+async function orSkip(promise, onSkip) {
+  try {
+    return await promise;
+  } catch (error) {
+    if (!UNREADABLE.has(error.status)) throw error;
+    onSkip(error);
+    return null;
+  }
+}
+
 // Repositories this token can see that the user committed to inside the window.
 async function reposFor(source, login, from, to) {
   const found = new Map();
@@ -218,14 +242,23 @@ export async function fetchStack({ sources, login, now = new Date(), windowDays 
   let lines = 0;
   let capped = false;
   const log = [];
+  const privateRead = new Set(); // private repositories whose commits were actually read
 
   for (const { source, repos } of perSource) {
     let listed = [];
+    let skipped = 0;
+    let ssoBlocked = 0;
+    const skip = (error) => { skipped++; if (error.sso) ssoBlocked++; };
+    const read = [];
     for (const repo of repos) {
-      const found = await commitsIn(source, repo, login, from, to);
+      const found = await orSkip(commitsIn(source, repo, login, from, to), skip);
+      if (found === null) continue;
+      read.push(repo);
       listed.push(...found);
       if (!found.length) continue;
-      const bytes = await rest(source.token, `/repos/${repoPath(repo.nameWithOwner)}/languages`, source);
+      if (repo.isPrivate) privateRead.add(repo.id);
+      const bytes = await orSkip(rest(source.token, `/repos/${repoPath(repo.nameWithOwner)}/languages`, source), () => {});
+      if (!bytes) continue;
       const total = Object.values(bytes).reduce((acc, n) => acc + n, 0);
       if (!total) continue;
       for (const [name, n] of Object.entries(bytes)) estimate[name] = (estimate[name] ?? 0) + (n / total) * found.length;
@@ -238,7 +271,8 @@ export async function fetchStack({ sources, login, now = new Date(), windowDays 
 
     let analyzed = 0;
     await pool(listed, 6, async (c) => {
-      const detail = await rest(source.token, `/repos/${repoPath(c.repo.nameWithOwner)}/commits/${c.sha}`, source);
+      const detail = await orSkip(rest(source.token, `/repos/${repoPath(c.repo.nameWithOwner)}/commits/${c.sha}`, source), () => {});
+      if (!detail) return;
       if ((detail.parents?.length ?? 0) > 1) return; // merge commits repeat work already counted
       analyzed++;
       for (const file of detail.files ?? []) {
@@ -252,12 +286,15 @@ export async function fetchStack({ sources, login, now = new Date(), windowDays 
     commits += analyzed;
     log.push({
       label: source.label,
-      repos: repos.length,
-      privateRepos: repos.filter((r) => r.isPrivate).length,
+      repos: read.length,
+      privateRepos: read.filter((r) => r.isPrivate).length,
+      skipped,
+      ssoBlocked,
       commits: analyzed,
     });
   }
 
+  // Unreadable repositories still count as seen: their names must stay secret too.
   const privateRepos = [...claimed.values()].filter((r) => r.isPrivate);
   // Names that must never reach the receipt or the logs; see guard.mjs.
   const secretNames = new Set();
@@ -275,7 +312,7 @@ export async function fetchStack({ sources, login, now = new Date(), windowDays 
     languages,
     estimate,
     repos: claimed.size,
-    privateRepos: privateRepos.length,
+    privateRepos: privateRead.size,
     capped,
     log,
     secretNames: [...secretNames],

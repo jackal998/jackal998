@@ -41,7 +41,7 @@ test('unknown user is an error', async () => {
 
 // A small GitHub: a private work repo only the work token sees, and a public
 // repo both tokens see (it must be read once, with the first token).
-function fakeGitHub({ failWith } = {}) {
+function fakeGitHub({ failWith, unreadable = {} } = {}) {
   const seen = { detail: [], lists: [] };
   const repos = {
     work: { id: 'R_work', nameWithOwner: 'acme/billing', isPrivate: true },
@@ -81,6 +81,11 @@ function fakeGitHub({ failWith } = {}) {
     if (langs) return json({ 'acme/billing': { Ruby: 9000, JavaScript: 1000 }, 'me/tool': { Python: 500 } }[langs[1]]);
     const list = u.pathname.match(/^\/repos\/([^/]+\/[^/]+)\/commits$/);
     if (list) {
+      const blocked = unreadable[list[1]];
+      if (blocked) {
+        return json({ message: `blocked: ${list[1]}` }, blocked.status,
+          blocked.sso ? { 'x-github-sso': 'required; url=https://github.com/orgs/acme/sso?authorization_request=x' } : {});
+      }
       assert.equal(u.searchParams.get('author'), 'me');
       seen.lists.push(`${token}:${list[1]}`);
       return json((commits[list[1]] ?? []).map((c) => ({ sha: c.sha, commit: { author: { date: c.date } } })));
@@ -116,8 +121,8 @@ test('fetchStack counts lines per language in the user\'s own commits', async ()
   assert.deepEqual(seen.lists.sort(), ['work:acme/billing', 'work:me/tool']);
   assert.ok(seen.detail.every((d) => d.startsWith('work:')));
   assert.deepEqual(stack.log, [
-    { label: 'work', repos: 2, privateRepos: 1, commits: 3 },
-    { label: 'default', repos: 0, privateRepos: 0, commits: 0 },
+    { label: 'work', repos: 2, privateRepos: 1, skipped: 0, ssoBlocked: 0, commits: 3 },
+    { label: 'default', repos: 0, privateRepos: 0, skipped: 0, ssoBlocked: 0, commits: 0 },
   ]);
   // GitHub's own view for comparison: repo language bytes weighted by my commits.
   assert.deepEqual(Object.fromEntries(Object.entries(stack.estimate).map(([k, v]) => [k, +v.toFixed(3)])),
@@ -144,4 +149,25 @@ test('errors from a read token never echo response bodies into logs', async () =
     fetchStack({ sources, login: 'me', now: new Date('2026-03-01T00:00:00Z') }),
     (error) => error.message === 'GitHub API HTTP 404' && !error.message.includes('acme'),
   );
+});
+
+test('repositories the token cannot read are skipped, never fatal, and stay secret', async () => {
+  fakeGitHub({ unreadable: { 'acme/billing': { status: 403, sso: true } } });
+  const stack = await fetchStack({ sources, login: 'me', now: new Date('2026-03-01T00:00:00Z') });
+  assert.deepEqual(stack.log[0], { label: 'work', repos: 1, privateRepos: 0, skipped: 1, ssoBlocked: 1, commits: 1 });
+  assert.deepEqual(stack.languages, { Python: 15 });
+  // Nothing private was read, so the receipt must not claim otherwise ...
+  assert.equal(stack.privateRepos, 0);
+  // ... but the name it saw is still guarded.
+  assert.deepEqual(stack.secretNames.sort(), ['acme', 'acme/billing']);
+
+  fakeGitHub({ unreadable: { 'acme/billing': { status: 409 } } });
+  const empty = await fetchStack({ sources, login: 'me', now: new Date('2026-03-01T00:00:00Z') });
+  assert.equal(empty.log[0].skipped, 1);
+  assert.equal(empty.log[0].ssoBlocked, 0);
+});
+
+test('other failures still stop the run', async () => {
+  fakeGitHub({ unreadable: { 'acme/billing': { status: 401 } } });
+  await assert.rejects(fetchStack({ sources, login: 'me', now: new Date('2026-03-01T00:00:00Z') }), /HTTP 401/);
 });
