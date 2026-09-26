@@ -20,12 +20,27 @@ test('fetchActivity reads the past year of contributions in one query', async ()
     calls.push({ auth: init.headers.Authorization, login: variables.login });
     assert.doesNotMatch(query, /from:/); // the default window is the past year
     return json({ data: { user: { contributionsCollection: {
-      contributionCalendar: { totalContributions: 40 }, restrictedContributionsCount: 30 } } } });
+      contributionCalendar: { totalContributions: 40, weeks: [
+        { contributionDays: [{ date: '2026-03-07', contributionCount: 25 }] },
+        { contributionDays: [{ date: '2026-03-08', contributionCount: 15 }, { date: '2026-03-09', contributionCount: 0 }] },
+      ] },
+      restrictedContributionsCount: 30,
+      totalCommitContributions: 6,
+      totalPullRequestContributions: 2,
+      totalPullRequestReviewContributions: 1,
+      totalIssueContributions: 1,
+      totalRepositoryContributions: 0,
+    } } } });
   };
 
   const activity = await fetchActivity({ token: 't0k', login: 'someone' });
   assert.deepEqual(calls, [{ auth: 'Bearer t0k', login: 'someone' }]);
-  assert.deepEqual(activity, { calendarTotal: 40, restricted: 30 });
+  assert.deepEqual(activity, {
+    calendarTotal: 40,
+    restricted: 30,
+    byType: { commits: 6, pullRequests: 2, reviews: 1, issues: 1, repositories: 0 },
+    days: [{ date: '2026-03-07', count: 25 }, { date: '2026-03-08', count: 15 }, { date: '2026-03-09', count: 0 }],
+  });
 });
 
 test('unknown user is an error', async () => {
@@ -105,8 +120,10 @@ test('fetchStack counts lines per language in the user\'s own commits', async ()
   // Merge commit a2 is skipped, db/schema.rb is generated, the 5000-line rake file is capped.
   assert.deepEqual(stack.languages, { Ruby: 40 + 1000, 'HTML+ERB': 10, Python: 15 });
   assert.equal(stack.lines, 1065);
+  assert.deepEqual([stack.added, stack.removed], [30 + 5 + 1000 + 12, 10 + 5 + 3]);
   assert.equal(stack.commits, 4); // includes a4, a rename that changes no lines
   assert.equal(stack.repos, 2);
+  assert.equal(stack.reposWithCommits, 2);
   assert.equal(stack.privateRepos, 1);
   assert.equal(stack.capped, false);
   // The public repo is read once, with the first token that could see it; the
@@ -119,6 +136,15 @@ test('fetchStack counts lines per language in the user\'s own commits', async ()
   ]);
   // Private repositories and their (non-personal) owners are handed to the leak guard.
   assert.deepEqual(stack.secretNames.sort(), ['acme', 'acme/billing']);
+});
+
+test('commit times are bucketed by hour in the profile\'s time zone', async () => {
+  fakeGitHub();
+  const stack = await fetchStack({ sources, login: 'me', now: new Date('2026-03-01T00:00:00Z'), timeZone: 'Asia/Taipei' });
+  // a1, a3, a4 and b1 were all made at 00:00 UTC, which is 08:00 in Taipei.
+  assert.equal(stack.hours[8], 4);
+  assert.equal(stack.hours.reduce((acc, n) => acc + n, 0), 4);
+  assert.equal(stack.timeZone, 'Asia/Taipei');
 });
 
 test('commits are also summarised per kind of repository', async () => {

@@ -1,4 +1,4 @@
-// Turns the raw API numbers into what the receipt shows. Pure functions, no I/O.
+// Turns the raw API numbers into what the receipts show. Pure functions, no I/O.
 
 function split(calendarTotal, restricted, label) {
   // The contribution calendar already counts private contributions, so the
@@ -13,6 +13,73 @@ function split(calendarTotal, restricted, label) {
 
 export function summarizeContributions(activity) {
   return split(activity.calendarTotal, activity.restricted, 'past 12 months');
+}
+
+export const CONTRIBUTION_TYPES = ['commits', 'pullRequests', 'reviews', 'issues', 'repositories'];
+
+// Contributions by type. A token only itemises what it can see; the rest is
+// GitHub's anonymous private count. Anything left over from the calendar total
+// (GitHub's totals are computed separately and can drift by a few) is "other",
+// so the rows always add up to the total printed below them.
+export function summarizeTypes(activity) {
+  const items = CONTRIBUTION_TYPES.map((key) => ({ key, count: activity.byType[key] ?? 0 }));
+  const itemised = items.reduce((acc, item) => acc + item.count, 0);
+  const rest = activity.calendarTotal - itemised - activity.restricted;
+  return {
+    items,
+    unitemised: activity.restricted,
+    other: Math.max(rest, 0),
+    // Itemised more than the calendar total: the rows cannot add up.
+    excess: Math.max(-rest, 0),
+  };
+}
+
+const WEEKDAYS = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
+const weekdayOf = (date) => new Date(`${date}T00:00:00Z`).getUTCDay();
+
+// The contribution calendar's days (private contributions included, anonymously)
+// as weekly totals and a few habits.
+export function summarizeCalendar(days) {
+  const sorted = [...days].sort((a, b) => a.date.localeCompare(b.date));
+  // Calendar weeks start on Sunday. A week that holds the 1st of a month
+  // carries that month for the axis.
+  const weeks = [];
+  for (const day of sorted) {
+    if (!weeks.length || weekdayOf(day.date) === 0) weeks.push({ start: day.date, count: 0, month: null });
+    const week = weeks.at(-1);
+    week.count += day.count;
+    if (day.date.endsWith('-01')) week.month = Number(day.date.slice(5, 7)) - 1;
+  }
+
+  let longestStreak = 0;
+  let run = 0;
+  for (const day of sorted) {
+    run = day.count > 0 ? run + 1 : 0;
+    longestStreak = Math.max(longestStreak, run);
+  }
+  // Today may simply not have started yet, so a quiet today does not end the streak.
+  let currentStreak = 0;
+  let i = sorted.length - 1;
+  if (i >= 0 && sorted[i].count === 0) i--;
+  for (; i >= 0 && sorted[i].count > 0; i--) currentStreak++;
+
+  const byWeekday = Array(7).fill(0);
+  let busiestDay = null;
+  for (const day of sorted) {
+    byWeekday[weekdayOf(day.date)] += day.count;
+    if (day.count > 0 && (!busiestDay || day.count > busiestDay.count)) busiestDay = day;
+  }
+  const top = Math.max(...byWeekday);
+
+  return {
+    weeks,
+    days: sorted.length,
+    activeDays: sorted.filter((day) => day.count > 0).length,
+    longestStreak,
+    currentStreak,
+    busiestDay,
+    busiestWeekday: top > 0 ? WEEKDAYS[byWeekday.indexOf(top)] : null,
+  };
 }
 
 // { language: weight } -> the top languages by share, the tail folded into
@@ -32,22 +99,53 @@ export function rankLanguages(weights, { top = 6 } = {}) {
   };
 }
 
+// Kinds of repository, in the order the receipt lists them.
+export const SOURCES = ['organisation private', 'personal private', 'personal public', 'public, other owners'];
+
+export function summarizeSources(categories = {}, totalLines) {
+  return SOURCES.filter((key) => categories[key]?.commits > 0).map((key) => {
+    const category = categories[key];
+    const [main] = rankLanguages(category.languages).items;
+    return {
+      key,
+      commits: category.commits,
+      lines: category.lines,
+      share: totalLines > 0 ? category.lines / totalLines : 0,
+      main: main ?? null,
+    };
+  });
+}
+
 export function summarizeStack(stack, { top = 6 } = {}) {
+  const hours = stack.hours ?? Array(24).fill(0);
+  const busiest = Math.max(...hours);
   return {
     ...rankLanguages(stack.languages, { top }),
     commits: stack.commits,
     lines: stack.lines,
+    added: stack.added,
+    removed: stack.removed,
+    repos: stack.reposWithCommits,
+    privateRepos: stack.privateRepos,
     includesPrivate: stack.privateRepos > 0,
     capped: stack.capped,
+    sources: summarizeSources(stack.categories, stack.lines),
+    hours,
+    peakHour: busiest > 0 ? hours.indexOf(busiest) : null,
+    timeZone: stack.timeZone ?? 'UTC',
   };
 }
 
+// raw.itemised, when present, is the same activity read with the read token,
+// which can itemise private contributions by type.
 export function buildStats(raw) {
   return {
     profile: raw.profile,
     login: raw.login,
     generatedAt: raw.generatedAt,
     contributions: summarizeContributions(raw.activity),
+    types: summarizeTypes(raw.itemised ?? raw.activity),
+    calendar: summarizeCalendar(raw.activity.days),
     stack: summarizeStack(raw.stack),
   };
 }

@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { buildStats, rankLanguages, summarizeContributions, summarizeStack } from '../aggregate.mjs';
+import {
+  buildStats, rankLanguages, summarizeCalendar, summarizeContributions, summarizeSources, summarizeStack, summarizeTypes,
+} from '../aggregate.mjs';
 import { assertNoLeak, findLeaks } from '../guard.mjs';
-import { languageOf, linesChanged } from '../languages.mjs';
-import { escapeXml, formatShare, measure, renderReceipt } from '../render.mjs';
+import { languageOf, linesChanged, splitChanged } from '../languages.mjs';
+import { escapeXml, formatShare, measure, renderHeader, renderReceipts } from '../render.mjs';
 
 const raw = JSON.parse(readFileSync(new URL('./fixture.json', import.meta.url), 'utf8'));
 
@@ -55,9 +57,59 @@ test('files map to Linguist languages; generated and vendored files do not count
   for (const [file, language] of Object.entries(cases)) assert.equal(languageOf(file), language, file);
 });
 
-test('one huge file change is capped', () => {
+test('one huge file change is capped, added and removed alike', () => {
   assert.equal(linesChanged({ additions: 40, deletions: 2 }), 42);
   assert.equal(linesChanged({ additions: 90000, deletions: 0 }), 1000);
+  assert.deepEqual(splitChanged({ additions: 40, deletions: 2 }), { added: 40, removed: 2 });
+  assert.deepEqual(splitChanged({ additions: 3000, deletions: 1000 }), { added: 750, removed: 250 });
+});
+
+test('contributions by type always add up to the total', () => {
+  // Default token: types are public only, the private ones are not itemised.
+  const pub = summarizeTypes(raw.activity);
+  assert.equal(pub.unitemised, 1502);
+  assert.equal(pub.other, 0);
+  // Read token: private ones itemised too; a gap in GitHub's totals becomes "other".
+  const read = summarizeTypes({ ...raw.itemised, calendarTotal: raw.itemised.calendarTotal + 5 });
+  assert.deepEqual(read.items.map((i) => i.count), [1500, 220, 110, 14, 8]);
+  assert.equal(read.unitemised, 12);
+  assert.equal(read.other, 5);
+  assert.equal(read.excess, 0);
+  assert.equal(summarizeTypes({ ...raw.itemised, calendarTotal: 1800 }).excess, 64);
+});
+
+test('calendar weeks, streaks and the busiest days', () => {
+  const day = (date, count) => ({ date, count });
+  const cal = summarizeCalendar([
+    // Out of order on purpose; 2026-03-01 is a Sunday.
+    day('2026-03-02', 3), day('2026-03-01', 0), day('2026-03-03', 5), day('2026-03-04', 0),
+    day('2026-03-05', 1), day('2026-03-06', 2), day('2026-03-07', 9), day('2026-03-08', 4), day('2026-03-09', 0),
+  ]);
+  assert.deepEqual(cal.weeks, [{ start: '2026-03-01', count: 20, month: 2 }, { start: '2026-03-08', count: 4, month: null }]);
+  assert.equal(cal.activeDays, 6);
+  assert.equal(cal.days, 9);
+  assert.equal(cal.longestStreak, 4);
+  assert.equal(cal.currentStreak, 4); // today (03-09) has not started, so it does not end the streak
+  assert.deepEqual(cal.busiestDay, { date: '2026-03-07', count: 9 });
+  assert.equal(cal.busiestWeekday, 'SATURDAY');
+  assert.equal(summarizeCalendar([day('2026-03-01', 0)]).busiestWeekday, null);
+
+  const full = summarizeCalendar(raw.activity.days);
+  assert.equal(full.weeks.reduce((acc, w) => acc + w.count, 0), 1864);
+  assert.equal(full.weeks.filter((w) => w.month !== null).length, 12);
+});
+
+test('lines are also attributed to the kind of repository they were changed in', () => {
+  const sources = summarizeSources(raw.stack.categories, raw.stack.lines);
+  assert.deepEqual(sources.map((s) => [s.key, s.commits, s.share, s.main.name]), [
+    ['organisation private', 900, 0.75, 'Ruby'],
+    ['personal private', 200, 0.2, 'Python'],
+    ['personal public', 140, 0.05, 'Ruby'],
+  ]);
+  assert.deepEqual(summarizeSources(undefined, 0), []);
+  const s = summarizeStack(raw.stack);
+  assert.equal(s.peakHour, 15);
+  assert.equal(s.added + s.removed, s.lines);
 });
 
 test('formatting, escaping and exact text measurement', () => {
@@ -68,34 +120,56 @@ test('formatting, escaping and exact text measurement', () => {
   assert.equal(measure('RUBY', 'mono400', 10), 4 * 6.12);
 });
 
-test('receipt prints the numbers, escapes names and never prints NaN', () => {
+const heightOf = (svg) => Number(svg.match(/^<svg [^>]*height="(\d+)"/)[1]);
+// Leaves out the embedded fonts, whose base64 could spell anything.
+const printed = (svg) => svg.replace(/<style>[\s\S]*?<\/style>/, '');
+
+test('receipts print the numbers, escape names and never print NaN', () => {
   const withOddName = structuredClone(raw);
   withOddName.stack.languages = { 'A&B<C>': 10, Ruby: 5 };
   withOddName.stack.lines = 15;
   for (const input of [raw, withOddName]) {
     const stats = buildStats(input);
     for (const theme of ['light', 'dark']) {
-      const svg = renderReceipt(stats, theme);
-      assert.ok(svg.startsWith('<svg xmlns="http://www.w3.org/2000/svg"'));
-      assert.doesNotMatch(svg, /NaN|undefined|Infinity/);
-      assert.match(svg, />1,864</);
-      assert.match(svg, />GITHUB CONTRIBUTIONS, 12 MO</);
-      assert.match(svg, />NO\. 001864</);
-      assert.doesNotMatch(svg, />20(16|21|26)</); // no per-year history any more
-      assert.match(svg, />\*OCTOCAT\*</);
-      assert.match(svg, /@font-face\{font-family:'Receipt';font-weight:700;src:url\(data:font\/woff2;base64,/);
+      const { activity, stack } = renderReceipts(stats, theme);
+      const header = renderHeader(stats, theme);
+      for (const svg of [activity, stack, header]) {
+        assert.ok(svg.startsWith('<svg xmlns="http://www.w3.org/2000/svg"'));
+        assert.doesNotMatch(printed(svg), /NaN|undefined|Infinity|null/);
+        assert.match(svg, /@font-face\{font-family:'Receipt';font-weight:700;src:url\(data:font\/woff2;base64,/);
+      }
+      // Printed to the same height, so they line up side by side.
+      assert.equal(heightOf(activity), heightOf(stack));
+      assert.match(activity, />1,864</);
+      assert.match(activity, />NO\. 001864</);
+      assert.match(activity, />PULL REQUESTS</);
+      assert.match(activity, />PRIVATE, NOT ITEMISED</);
+      assert.match(activity, />GMT\+8</);
+      assert.match(activity, />15:00-16:00</);
+      assert.match(activity, />\* PRIVATE INCLUDES COMPANY WORK \*</);
+      assert.match(stack, />\*OCTOCAT\*</);
+      assert.match(stack, />ORG REPOS, PRIVATE</);
+      assert.match(header, />Octo Cat</);
     }
   }
-  assert.match(renderReceipt(buildStats(raw), 'light'), />PUBLIC \+ PRIVATE</);
-  assert.match(renderReceipt(buildStats(withOddName), 'dark'), />A&amp;B&lt;C&gt;</);
+  const stats = buildStats(raw);
+  assert.match(renderReceipts(stats, 'light').stack, />public \+ private repositories</);
+  assert.match(renderReceipts(stats, 'light').stack, />\+140,000</);
+  assert.match(renderReceipts(buildStats(withOddName), 'dark').stack, />A&amp;B&lt;C&gt;</);
 });
 
-test('receipt without any code changes says so', () => {
+test('receipts without any code changes or activity say so', () => {
   const empty = structuredClone(raw);
-  Object.assign(empty.stack, { languages: {}, lines: 0, commits: 0, privateRepos: 0 });
-  const svg = renderReceipt(buildStats(empty), 'light');
-  assert.match(svg, /NO CODE CHANGES FOUND/);
-  assert.match(svg, />PUBLIC ONLY</);
+  Object.assign(empty.stack, { languages: {}, lines: 0, added: 0, removed: 0, commits: 0, privateRepos: 0, categories: {}, hours: Array(24).fill(0) });
+  Object.assign(empty.activity, { calendarTotal: 0, restricted: 0, days: empty.activity.days.map((d) => ({ ...d, count: 0 })) });
+  empty.activity.byType = { commits: 0, pullRequests: 0, reviews: 0, issues: 0, repositories: 0 };
+  delete empty.itemised;
+  const { activity, stack } = renderReceipts(buildStats(empty), 'light');
+  assert.match(stack, /NO CODE CHANGES FOUND/);
+  assert.match(stack, />public repositories only</);
+  assert.doesNotMatch(stack, />SOURCE</);
+  assert.doesNotMatch(activity, /PEAK HOUR|BUSIEST|COMPANY WORK/);
+  for (const svg of [activity, stack]) assert.doesNotMatch(printed(svg), /NaN|undefined|Infinity|null/);
 });
 
 test('ranking folds the tail into Other only when it holds several languages', () => {
@@ -110,5 +184,6 @@ test('leak guard catches private names in any case and never repeats them', () =
   assert.deepEqual(findLeaks('RUBY 63.0% PYTHON 15.0%', names), []);
   assert.throws(() => assertNoLeak('receipt', 'made at Acme', names), (error) =>
     error.message === 'Refusing to publish receipt: it mentions 1 private name(s)');
-  assert.doesNotThrow(() => assertNoLeak('receipt', renderReceipt(buildStats(raw), 'light'), names));
+  const { activity, stack } = renderReceipts(buildStats(raw), 'light');
+  assert.doesNotThrow(() => assertNoLeak('receipts', activity + stack, names));
 });

@@ -9,9 +9,9 @@ on:
       - "scripts/profile-stats/**"
       - ".github/workflows/profile-stats.yml"
 
-# The job's own GITHUB_TOKEN reads public data and commits the receipt back.
+# The job's own GITHUB_TOKEN reads public data and commits the receipts back.
 # The optional READ_TOKEN secret adds private repositories to the language
-# breakdown. It is handed to the one step that needs it, the script only ever
+# breakdown and itemises private contributions. It is handed to the one step that needs it, the script only ever
 # reads with it, and only aggregated numbers are logged or committed.
 permissions:
   contents: write
@@ -30,23 +30,25 @@ jobs:
       - name: Test
         run: node --test scripts/profile-stats/test/*.test.mjs
 
-      - name: Generate receipt
+      - name: Generate receipts
         run: node scripts/profile-stats/main.mjs
         env:
           GITHUB_TOKEN: ${{ github.token }}
           READ_TOKEN: ${{ secrets.READ_TOKEN }}
           PROFILE_LOGIN: ${{ github.repository_owner }}
 
-      - name: Commit changed receipt
+      - name: Commit changed receipts
         run: |
-          # Only the two receipt files, never anything else a run left behind.
-          git add profile/receipt-light.svg profile/receipt-dark.svg
+          # Only the generated images, never anything else a run left behind.
+          git add profile/header-light.svg profile/header-dark.svg \
+            profile/activity-light.svg profile/activity-dark.svg \
+            profile/stack-light.svg profile/stack-dark.svg
           if git diff --cached --quiet; then
-            echo "Receipt unchanged."
+            echo "Receipts unchanged."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "chore: update profile receipt"
+          git commit -m "chore: update profile receipts"
           git pull --rebase origin "$GITHUB_REF_NAME"
           git push origin "HEAD:$GITHUB_REF_NAME"

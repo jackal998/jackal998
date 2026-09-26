@@ -1,15 +1,17 @@
-// Reads the raw numbers behind the profile receipt from the GitHub API.
+// Reads the raw numbers behind the profile receipts from the GitHub API.
 //
 // Activity totals use the workflow's own GITHUB_TOKEN, which only sees public
 // data; private contributions still arrive as GitHub's anonymous
-// `restrictedContributionsCount` when "Private contributions" is enabled.
+// `restrictedContributionsCount` when "Private contributions" is enabled, and
+// are included in the daily counts of the contribution calendar. A read token,
+// when there is one, itemises the private contributions by type.
 //
 // The language breakdown looks at the files changed in each of the user's
 // commits. Optional read-only tokens let it include private repositories.
 // Actions logs of a public repository are public, so nothing here ever logs or
 // returns a repository name or commit SHA - only aggregated counts leave.
 
-import { languageOf, linesChanged } from './languages.mjs';
+import { languageOf, splitChanged } from './languages.mjs';
 
 const API = 'https://api.github.com';
 const ATTEMPTS = 4;
@@ -96,18 +98,40 @@ const ACTIVITY_QUERY = `
   query ($login: String!) {
     user(login: $login) {
       contributionsCollection {
-        contributionCalendar { totalContributions }
+        contributionCalendar {
+          totalContributions
+          weeks { contributionDays { date contributionCount } }
+        }
         restrictedContributionsCount
+        totalCommitContributions
+        totalPullRequestContributions
+        totalPullRequestReviewContributions
+        totalIssueContributions
+        totalRepositoryContributions
       }
     }
   }
 `;
 
-export async function fetchActivity({ token, login }) {
-  const data = await graphql(token, ACTIVITY_QUERY, { login });
+// The per-type totals only count what the token can see; everything else is
+// in `restricted`.
+export async function fetchActivity({ token, login, sensitive = false }) {
+  const data = await graphql(token, ACTIVITY_QUERY, { login }, { sensitive });
   if (!data.user) throw new Error(`GitHub user "${login}" not found`);
   const c = data.user.contributionsCollection;
-  return { calendarTotal: c.contributionCalendar.totalContributions, restricted: c.restrictedContributionsCount };
+  return {
+    calendarTotal: c.contributionCalendar.totalContributions,
+    restricted: c.restrictedContributionsCount,
+    byType: {
+      commits: c.totalCommitContributions,
+      pullRequests: c.totalPullRequestContributions,
+      reviews: c.totalPullRequestReviewContributions,
+      issues: c.totalIssueContributions,
+      repositories: c.totalRepositoryContributions,
+    },
+    days: c.contributionCalendar.weeks.flatMap((week) =>
+      week.contributionDays.map((day) => ({ date: day.date, count: day.contributionCount }))),
+  };
 }
 
 // --- Stack: lines changed per language in the user's own commits -------------
@@ -181,7 +205,7 @@ async function commitsIn(source, repo, login, from, to) {
   return commits;
 }
 
-// Where a commit was made, for the aggregated breakdown in the logs.
+// Where a commit was made, for the aggregated breakdown by kind of repository.
 export function categoryOf(repo, login) {
   const owner = repo.nameWithOwner.split('/')[0].toLowerCase();
   if (owner === login.toLowerCase()) return repo.isPrivate ? 'personal private' : 'personal public';
@@ -192,11 +216,13 @@ const addTo = (bag, key, n) => { bag[key] = (bag[key] ?? 0) + n; };
 
 /**
  * sources: [{ token, label, listAll, sensitive, maxCommits }], most capable first.
- * A repository is read with the first source that can see it.
+ * A repository is read with the first source that can see it. Commit times are
+ * bucketed by hour of day in `timeZone`.
  */
-export async function fetchStack({ sources, login, now = new Date(), windowDays = 365 }) {
+export async function fetchStack({ sources, login, now = new Date(), windowDays = 365, timeZone = 'UTC' }) {
   const to = now;
   const from = new Date(now.getTime() - windowDays * DAY_MS);
+  const hourOf = new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', hourCycle: 'h23' });
   const claimed = new Map();
   const perSource = [];
 
@@ -209,11 +235,14 @@ export async function fetchStack({ sources, login, now = new Date(), windowDays 
 
   const languages = {};
   let commits = 0;
-  let lines = 0;
+  let added = 0;
+  let removed = 0;
   let capped = false;
+  const hours = Array(24).fill(0);
   const log = [];
-  const privateRead = new Set(); // private repositories whose commits were actually read
-  // Aggregated per kind of repository, as a health check in the logs: if the
+  const withCommits = new Set(); // repositories whose commits were actually read
+  const privateRead = new Set();
+  // Aggregated per kind of repository. Also a health check in the logs: if the
   // organisation line drops to zero, the read token lost access.
   const categories = {};
 
@@ -229,6 +258,7 @@ export async function fetchStack({ sources, login, now = new Date(), windowDays 
       read.push(repo);
       listed.push(...found);
       if (!found.length) continue;
+      withCommits.add(repo.id);
       if (repo.isPrivate) privateRead.add(repo.id);
     }
     listed.sort((a, b) => String(b.date).localeCompare(String(a.date)));
@@ -243,15 +273,18 @@ export async function fetchStack({ sources, login, now = new Date(), windowDays 
       if (!detail) return;
       if ((detail.parents?.length ?? 0) > 1) return; // merge commits repeat work already counted
       analyzed++;
+      if (c.date) hours[Number(hourOf.format(new Date(c.date))) % 24]++;
       const category = (categories[categoryOf(c.repo, login)] ??= { commits: 0, lines: 0, languages: {} });
       category.commits++;
       for (const file of detail.files ?? []) {
         const language = languageOf(file.filename);
         if (!language) continue;
-        const n = linesChanged(file);
+        const change = splitChanged(file);
+        const n = change.added + change.removed;
         addTo(languages, language, n);
         addTo(category.languages, language, n);
-        lines += n;
+        added += change.added;
+        removed += change.removed;
         category.lines += n;
       }
     });
@@ -280,10 +313,15 @@ export async function fetchStack({ sources, login, now = new Date(), windowDays 
     from: from.toISOString(),
     to: to.toISOString(),
     commits,
-    lines,
+    lines: added + removed,
+    added,
+    removed,
     languages,
     categories,
+    hours,
+    timeZone,
     repos: claimed.size,
+    reposWithCommits: withCommits.size,
     privateRepos: privateRead.size,
     capped,
     log,
