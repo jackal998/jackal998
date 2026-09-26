@@ -1,44 +1,80 @@
-// Reads the raw numbers behind the profile cards from the GitHub GraphQL API.
+// Reads the raw numbers behind the profile receipt from the GitHub API.
 //
-// Runs with the workflow's short-lived GITHUB_TOKEN, which only sees public
-// data. Private contributions still arrive, as the anonymous per-year
-// `restrictedContributionsCount` GitHub exposes when "Private contributions"
-// is enabled on the profile - no repository names or details.
+// Activity totals use the workflow's own GITHUB_TOKEN, which only sees public
+// data; private contributions still arrive as GitHub's anonymous per-year
+// `restrictedContributionsCount` when "Private contributions" is enabled.
+//
+// The language breakdown looks at the files changed in each of the user's
+// commits. Optional read-only tokens let it include private repositories.
+// Actions logs of a public repository are public, so nothing here ever logs or
+// returns a repository name or commit SHA - only aggregated counts leave.
 
-const ENDPOINT = 'https://api.github.com/graphql';
-const ATTEMPTS = 3;
+import { languageOf, linesChanged } from './languages.mjs';
 
-async function graphql(token, query, variables) {
+const API = 'https://api.github.com';
+const ATTEMPTS = 4;
+const MAX_WAIT_MS = 120_000;
+const DAY_MS = 86_400_000;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function request(token, url, init, { sensitive }) {
   let lastError;
   for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
+    let res;
     try {
-      const res = await fetch(ENDPOINT, {
-        method: 'POST',
+      res = await fetch(url, {
+        ...init,
         headers: {
-          Authorization: `bearer ${token}`,
-          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/vnd.github+json',
           'User-Agent': 'profile-stats',
+          ...init.headers,
         },
-        body: JSON.stringify({ query, variables }),
       });
-      if (res.status >= 500) throw new Error(`GitHub GraphQL HTTP ${res.status}`);
-      if (!res.ok) {
-        // 4xx will not fix itself on retry.
-        throw Object.assign(new Error(`GitHub GraphQL HTTP ${res.status}: ${await res.text()}`), { fatal: true });
-      }
-      const body = await res.json();
-      if (body.errors?.length) {
-        throw Object.assign(new Error(`GitHub GraphQL errors: ${JSON.stringify(body.errors)}`), { fatal: true });
-      }
-      return body.data;
     } catch (error) {
-      lastError = error;
-      if (error.fatal || attempt === ATTEMPTS) break;
-      await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
+      lastError = new Error(`GitHub request failed: ${error.cause?.code ?? error.name}`);
+      await sleep(2000 * attempt);
+      continue;
     }
+    if (res.ok) return res;
+
+    const retryAfter = Number(res.headers.get('retry-after')) || 0;
+    const reset = Number(res.headers.get('x-ratelimit-reset')) || 0;
+    const limited = res.status === 429 ||
+      (res.status === 403 && (retryAfter > 0 || res.headers.get('x-ratelimit-remaining') === '0'));
+    // Private repository names can appear in error bodies; keep them out of public logs.
+    const detail = sensitive ? '' : `: ${(await res.text()).slice(0, 500)}`;
+    lastError = new Error(`GitHub API HTTP ${res.status}${detail}`);
+    if (!(limited || res.status >= 500) || attempt === ATTEMPTS) break;
+
+    const wait = retryAfter ? retryAfter * 1000 : limited && reset ? reset * 1000 - Date.now() + 1000 : 2000 * attempt;
+    if (wait > MAX_WAIT_MS) break;
+    await sleep(Math.max(wait, 1000));
   }
   throw lastError;
 }
+
+async function graphql(token, query, variables, { sensitive = false } = {}) {
+  const res = await request(token, `${API}/graphql`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, variables }),
+  }, { sensitive });
+  const body = await res.json();
+  if (body.errors?.length) {
+    const detail = sensitive ? body.errors.map((e) => e.type ?? 'ERROR').join(', ') : JSON.stringify(body.errors);
+    throw new Error(`GitHub GraphQL errors: ${detail}`);
+  }
+  return body.data;
+}
+
+async function rest(token, path, { sensitive = false } = {}) {
+  const res = await request(token, `${API}${path}`, { method: 'GET', headers: { 'X-GitHub-Api-Version': '2022-11-28' } }, { sensitive });
+  return res.json();
+}
+
+// --- Activity: contribution totals per year --------------------------------
 
 const OVERVIEW_QUERY = `
   query ($login: String!) {
@@ -53,28 +89,9 @@ const OVERVIEW_QUERY = `
   }
 `;
 
-const REPOS_QUERY = `
-  query ($login: String!, $cursor: String) {
-    user(login: $login) {
-      repositories(first: 100, after: $cursor, ownerAffiliations: OWNER, isFork: false, privacy: PUBLIC) {
-        pageInfo { hasNextPage endCursor }
-        nodes {
-          name
-          languages(first: 100) { edges { size node { name } } }
-        }
-      }
-    }
-  }
-`;
-
 const YEAR_FIELDS = `
   contributionCalendar { totalContributions }
   restrictedContributionsCount
-  totalCommitContributions
-  totalIssueContributions
-  totalPullRequestContributions
-  totalPullRequestReviewContributions
-  totalRepositoryContributions
 `;
 
 // One aliased contributionsCollection per calendar year, in a single request.
@@ -82,14 +99,13 @@ const YEAR_FIELDS = `
 function yearsQuery(years, now) {
   const collections = years.map((year) => {
     const from = `${year}-01-01T00:00:00Z`;
-    const yearEnd = `${year}-12-31T23:59:59Z`;
-    const to = year === now.getUTCFullYear() ? now.toISOString() : yearEnd;
+    const to = year === now.getUTCFullYear() ? now.toISOString() : `${year}-12-31T23:59:59Z`;
     return `y${year}: contributionsCollection(from: "${from}", to: "${to}") { ${YEAR_FIELDS} }`;
   });
   return `query ($login: String!) { user(login: $login) { ${collections.join('\n')} } }`;
 }
 
-export async function fetchRaw({ token, login, now = new Date() }) {
+export async function fetchActivity({ token, login, now = new Date() }) {
   const overview = await graphql(token, OVERVIEW_QUERY, { login });
   if (!overview.user) throw new Error(`GitHub user "${login}" not found`);
   const pastYear = overview.user.contributionsCollection;
@@ -103,42 +119,131 @@ export async function fetchRaw({ token, login, now = new Date() }) {
   for (let year = firstYear; year <= now.getUTCFullYear(); year++) yearList.push(year);
 
   const yearly = await graphql(token, yearsQuery(yearList, now), { login });
-  const years = yearList.map((year) => {
-    const c = yearly.user[`y${year}`];
-    return {
-      year,
-      calendarTotal: c.contributionCalendar.totalContributions,
-      restricted: c.restrictedContributionsCount,
-      commits: c.totalCommitContributions,
-      issues: c.totalIssueContributions,
-      pullRequests: c.totalPullRequestContributions,
-      reviews: c.totalPullRequestReviewContributions,
-      repositories: c.totalRepositoryContributions,
-    };
-  });
-
-  const repos = [];
-  let cursor = null;
-  do {
-    const page = await graphql(token, REPOS_QUERY, { login, cursor });
-    const { nodes, pageInfo } = page.user.repositories;
-    for (const repo of nodes) {
-      repos.push({
-        name: repo.name,
-        languages: repo.languages.edges.map((edge) => ({ name: edge.node.name, size: edge.size })),
-      });
-    }
-    cursor = pageInfo.hasNextPage ? pageInfo.endCursor : null;
-  } while (cursor);
-
   return {
-    login,
-    generatedAt: now.toISOString(),
     pastYear: {
       calendarTotal: pastYear.contributionCalendar.totalContributions,
       restricted: pastYear.restrictedContributionsCount,
     },
-    years,
-    repos,
+    years: yearList.map((year) => ({
+      year,
+      calendarTotal: yearly.user[`y${year}`].contributionCalendar.totalContributions,
+      restricted: yearly.user[`y${year}`].restrictedContributionsCount,
+    })),
   };
+}
+
+// --- Stack: lines changed per language in the user's own commits -------------
+
+const WINDOW_REPOS_QUERY = `
+  query ($login: String!, $from: DateTime!, $to: DateTime!) {
+    user(login: $login) {
+      contributionsCollection(from: $from, to: $to) {
+        commitContributionsByRepository(maxRepositories: 100) {
+          repository { id nameWithOwner isPrivate }
+        }
+      }
+    }
+  }
+`;
+
+async function pool(items, limit, fn) {
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) await fn(items[next++]);
+  });
+  await Promise.all(workers);
+}
+
+const repoPath = (nameWithOwner) => nameWithOwner.split('/').map(encodeURIComponent).join('/');
+
+// Repositories this token can see that the user committed to inside the window.
+async function reposFor(source, login, from, to) {
+  const found = new Map();
+  const data = await graphql(source.token, WINDOW_REPOS_QUERY, { login, from: from.toISOString(), to: to.toISOString() }, source);
+  for (const { repository: r } of data.user.contributionsCollection.commitContributionsByRepository) {
+    found.set(r.id, { id: r.id, nameWithOwner: r.nameWithOwner, isPrivate: r.isPrivate });
+  }
+  // The contribution graph can leave out private repositories for some token
+  // types, so read tokens also list every repository they can reach directly.
+  if (source.listAll) {
+    for (let page = 1; page <= 20; page++) {
+      const repos = await rest(source.token, `/user/repos?per_page=100&page=${page}&sort=pushed`, source);
+      for (const r of repos) {
+        if (new Date(r.pushed_at) >= from && !found.has(r.node_id)) {
+          found.set(r.node_id, { id: r.node_id, nameWithOwner: r.full_name, isPrivate: r.private });
+        }
+      }
+      if (repos.length < 100) break;
+    }
+  }
+  return [...found.values()];
+}
+
+async function commitsIn(source, repo, login, from, to) {
+  const commits = [];
+  for (let page = 1; page <= 50; page++) {
+    const query = `author=${encodeURIComponent(login)}&since=${from.toISOString()}&until=${to.toISOString()}&per_page=100&page=${page}`;
+    const list = await rest(source.token, `/repos/${repoPath(repo.nameWithOwner)}/commits?${query}`, source);
+    for (const c of list) commits.push({ sha: c.sha, date: c.commit.author?.date ?? c.commit.committer?.date, repo, source });
+    if (list.length < 100) break;
+  }
+  return commits;
+}
+
+/**
+ * sources: [{ token, label, listAll, sensitive, maxCommits }], most capable first.
+ * A repository is read with the first source that can see it.
+ */
+export async function fetchStack({ sources, login, now = new Date(), windowDays = 365 }) {
+  const to = now;
+  const from = new Date(now.getTime() - windowDays * DAY_MS);
+  const claimed = new Map();
+  const perSource = [];
+
+  for (const source of sources) {
+    const repos = await reposFor(source, login, from, to);
+    const mine = repos.filter((r) => !claimed.has(r.id));
+    for (const r of mine) claimed.set(r.id, { ...r, source });
+    perSource.push({ source, repos: mine });
+  }
+
+  const languages = {};
+  let commits = 0;
+  let lines = 0;
+  let capped = false;
+  const log = [];
+
+  for (const { source, repos } of perSource) {
+    let listed = [];
+    for (const repo of repos) listed.push(...await commitsIn(source, repo, login, from, to));
+    listed.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+    if (listed.length > source.maxCommits) {
+      listed = listed.slice(0, source.maxCommits);
+      capped = true;
+    }
+
+    let analyzed = 0;
+    await pool(listed, 6, async (c) => {
+      const detail = await rest(source.token, `/repos/${repoPath(c.repo.nameWithOwner)}/commits/${c.sha}`, source);
+      if ((detail.parents?.length ?? 0) > 1) return; // merge commits repeat work already counted
+      analyzed++;
+      for (const file of detail.files ?? []) {
+        const language = languageOf(file.filename);
+        if (!language) continue;
+        const n = linesChanged(file);
+        languages[language] = (languages[language] ?? 0) + n;
+        lines += n;
+      }
+    });
+    commits += analyzed;
+    log.push({
+      label: source.label,
+      repos: repos.length,
+      privateRepos: repos.filter((r) => r.isPrivate).length,
+      commits: analyzed,
+    });
+  }
+
+  const privateRepos = [...claimed.values()].filter((r) => r.isPrivate).length;
+  return { from: from.toISOString(), to: to.toISOString(), commits, lines, languages, repos: claimed.size, privateRepos, capped, log };
 }

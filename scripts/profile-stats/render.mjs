@@ -1,36 +1,30 @@
-// Draws the profile cards as standalone SVG strings. Pure functions, no I/O.
+// Prints the profile receipt as a standalone SVG string. No network, no I/O
+// beyond reading the bundled fonts.
 //
-// README images are sandboxed <img> elements: no scripts, no web fonts, no
-// hover. Everything a reader needs is printed on the card, and each theme gets
-// its own file so the README's <picture> can follow GitHub's light/dark mode.
+// README images are sandboxed <img> elements: no scripts and no external
+// fonts, so the fonts are subset and embedded as data URIs (see fonts/). Each
+// theme gets its own file so the README's <picture> can follow GitHub's mode.
+
+import { readFileSync } from 'node:fs';
+
+const FONTS = new URL('./fonts/', import.meta.url);
+const METRICS = JSON.parse(readFileSync(new URL('metrics.json', FONTS), 'utf8'));
+const fontData = (file) => readFileSync(new URL(file, FONTS)).toString('base64');
+const FONT_FACES = [
+  ['Receipt', 400, 'space-mono-400.woff2'],
+  ['Receipt', 700, 'space-mono-700.woff2'],
+  ['Barcode', 400, 'libre-barcode-39-text-400.woff2'],
+].map(([family, weight, file]) =>
+  `@font-face{font-family:'${family}';font-weight:${weight};src:url(data:font/woff2;base64,${fontData(file)}) format('woff2')}`).join('');
 
 export const THEMES = {
-  light: {
-    surface: '#fcfcfb',
-    border: 'rgba(11,11,11,0.10)',
-    ink: '#0b0b0b',
-    ink2: '#52514e',
-    muted: '#898781',
-    grid: '#e1e0d9',
-    axis: '#c3c2b7',
-    series: ['#2a78d6', '#eb6834'],
-  },
-  dark: {
-    surface: '#1a1a19',
-    border: 'rgba(255,255,255,0.10)',
-    ink: '#ffffff',
-    ink2: '#c3c2b7',
-    muted: '#898781',
-    grid: '#2c2c2a',
-    axis: '#383835',
-    series: ['#3987e5', '#d95926'],
-  },
+  light: { paper: '#fffdf7', ink: '#23211c', dim: '#6f6a5f', rule: '#b9b3a4', shadow: 'rgba(0,0,0,0.14)' },
+  dark: { paper: '#ebe7db', ink: '#1d1b16', dim: '#5f5a4f', rule: '#a39d8e', shadow: 'rgba(0,0,0,0.6)' },
 };
 
-const WIDTH = 840;
-const PAD = 24;
-const FONT = "system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif";
-const GAP = 2; // surface gap between stacked segments
+const WIDTH = 460;
+const EDGE = 16; // room around the paper for its shadow
+const PAD = 40; // text inset from the paper edge
 
 const numberFormat = new Intl.NumberFormat('en-US');
 export const formatNumber = (n) => numberFormat.format(n);
@@ -52,190 +46,135 @@ export function escapeXml(value) {
 
 const r2 = (n) => Math.round(n * 100) / 100;
 
-// Rough text width for layout decisions; system fonts average ~0.56em per glyph.
-const textWidth = (text, size) => String(text).length * size * 0.56;
+// Exact advance width from the embedded font's metrics.
+export function measure(text, font, size) {
+  const { upem, advances } = METRICS[font];
+  let units = 0;
+  for (const ch of String(text)) units += advances[ch] ?? upem * 0.6;
+  return (units / upem) * size;
+}
 
-function truncate(text, size, maxWidth) {
-  if (textWidth(text, size) <= maxWidth) return text;
+function truncate(text, font, size, maxWidth) {
+  if (measure(text, font, size) <= maxWidth) return text;
   let cut = text;
-  while (cut.length > 1 && textWidth(`${cut}…`, size) > maxWidth) cut = cut.slice(0, -1);
+  while (cut.length > 1 && measure(`${cut}…`, font, size) > maxWidth) cut = cut.slice(0, -1);
   return `${cut}…`;
 }
 
-// Clean axis ticks: step is 1, 2, 2.5 or 5 x 10^k (2.5 only once it stays whole).
-export function niceScale(max, targetTicks = 4) {
-  if (!(max > 0)) return { max: 1, step: 1 };
-  const rough = max / targetTicks;
-  const magnitude = 10 ** Math.floor(Math.log10(rough));
-  const multipliers = magnitude >= 10 ? [1, 2, 2.5, 5, 10] : [1, 2, 5, 10];
-  const step = Math.max(1, multipliers.map((m) => m * magnitude).find((s) => s >= rough));
-  return { max: Math.ceil(max / step) * step, step };
+// Code 39 only encodes A-Z, 0-9 and a few symbols.
+const barcodeText = (login) => `*${login.toUpperCase().replace(/[^A-Z0-9 .$/+%-]/g, '-')}*`;
+
+function paper(t, height) {
+  const teeth = 22;
+  const tooth = (WIDTH - 2 * EDGE) / teeth;
+  const depth = 6;
+  const bottom = height - EDGE;
+  let top = `M${EDGE},${depth}`;
+  let bot = '';
+  for (let i = 0; i < teeth; i++) top += `L${r2(EDGE + tooth * (i + 0.5))},0L${r2(EDGE + tooth * (i + 1))},${depth}`;
+  for (let i = teeth; i > 0; i--) bot += `L${r2(EDGE + tooth * (i - 0.5))},${bottom}L${r2(EDGE + tooth * (i - 1))},${bottom - depth}`;
+  return `<defs><filter id="shadow" x="-10%" y="-5%" width="120%" height="110%"><feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="${t.shadow}"/></filter></defs>
+<path d="${top}L${WIDTH - EDGE},${bottom - depth}${bot}Z" fill="${t.paper}" filter="url(#shadow)"/>`;
 }
 
-// Vertical bar with a 4px rounded data-end on top, square at the baseline.
-function columnPath(x, y, w, h, radius = 4) {
-  const r = Math.min(radius, w / 2, h);
-  return `M${r2(x)},${r2(y + h)}V${r2(y + r)}A${r2(r)},${r2(r)} 0 0 1 ${r2(x + r)},${r2(y)}` +
-    `H${r2(x + w - r)}A${r2(r)},${r2(r)} 0 0 1 ${r2(x + w)},${r2(y + r)}V${r2(y + h)}Z`;
-}
-
-// Horizontal bar with a 4px rounded data-end on the right, square at the baseline.
-function barPath(x, y, w, h, radius = 4) {
-  const r = Math.min(radius, h / 2, w);
-  return `M${r2(x)},${r2(y)}H${r2(x + w - r)}A${r2(r)},${r2(r)} 0 0 1 ${r2(x + w)},${r2(y + r)}` +
-    `V${r2(y + h - r)}A${r2(r)},${r2(r)} 0 0 1 ${r2(x + w - r)},${r2(y + h)}H${r2(x)}Z`;
-}
-
-function frame({ height, theme, title, desc, body }) {
-  const t = THEMES[theme];
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${height}" viewBox="0 0 ${WIDTH} ${height}" role="img" aria-labelledby="title desc">
-<title id="title">${escapeXml(title)}</title>
-<desc id="desc">${escapeXml(desc)}</desc>
-<style>
-text { font-family: ${FONT}; fill: ${t.ink}; }
-.title { font-size: 16px; font-weight: 600; }
-.hero { font-size: 48px; font-weight: 600; }
-.value { font-size: 22px; font-weight: 600; }
-.label { font-size: 13px; fill: ${t.ink2}; }
-.small { font-size: 12px; fill: ${t.ink2}; }
-.tick { font-size: 11px; fill: ${t.muted}; font-variant-numeric: tabular-nums; }
-.note { font-size: 11px; fill: ${t.muted}; }
-.halo { paint-order: stroke; stroke: ${t.surface}; stroke-width: 4px; stroke-linejoin: round; }
-</style>
-<rect x="0.5" y="0.5" width="${WIDTH - 1}" height="${height - 1}" rx="8" fill="${t.surface}" stroke="${t.border}"/>
-${body}
-</svg>
-`;
-}
-
-export function renderContributionsCard(stats, theme) {
+export function renderReceipt(stats, theme) {
   const t = THEMES[theme];
   const c = stats.contributions;
-  const height = 248;
+  const s = stats.stack;
   const updated = stats.generatedAt.slice(0, 10);
-  const parts = [];
+  const out = [];
+  let y = 0;
 
-  // Header: title left, legend right.
-  parts.push(`<text x="${PAD}" y="40" class="title">Contributions</text>`);
-  const legend = [['Public', t.series[0]], ['Private', t.series[1]]];
-  let lx = WIDTH - PAD;
-  for (const [name, color] of [...legend].reverse()) {
-    lx -= textWidth(name, 12);
-    parts.push(`<text x="${r2(lx)}" y="40" class="small">${name}</text>`);
-    lx -= 16;
-    parts.push(`<rect x="${r2(lx)}" y="31" width="10" height="10" rx="2" fill="${color}"/>`);
-    lx -= 16;
-  }
+  const center = (text, cls = '') => out.push(`<text x="${WIDTH / 2}" y="${y}" text-anchor="middle" class="${cls}">${escapeXml(text)}</text>`);
+  const dashed = () => out.push(`<line x1="${PAD}" y1="${y}" x2="${WIDTH - PAD}" y2="${y}" stroke="${t.rule}" stroke-dasharray="4 4"/>`);
+  const double = () => out.push(`<line x1="${PAD}" y1="${y}" x2="${WIDTH - PAD}" y2="${y}" stroke="${t.ink}"/>` +
+    `<line x1="${PAD}" y1="${y + 3}" x2="${WIDTH - PAD}" y2="${y + 3}" stroke="${t.ink}"/>`);
+  const heading = (left, right) => out.push(`<text x="${PAD}" y="${y}" class="b">${escapeXml(left)}</text>` +
+    `<text x="${WIDTH - PAD}" y="${y}" text-anchor="end" class="note">${escapeXml(right)}</text>`);
 
-  // Left column: hero figure, then three stat tiles.
-  parts.push(`<text x="${PAD}" y="108" class="hero">${formatNumber(c.total)}</text>`);
-  parts.push(`<text x="${PAD}" y="132" class="label">All-time contributions since ${c.firstYear}</text>`);
-  const tiles = [
-    ['Past year', c.pastYear.total],
-    ['Public', c.public],
-    ['Private', c.private],
-  ];
-  tiles.forEach(([label, value], i) => {
-    const x = PAD + i * 104;
-    parts.push(`<text x="${x}" y="172" class="label">${label}</text>`);
-    parts.push(`<text x="${x}" y="198" class="value">${formatNumber(value)}</text>`);
-  });
-  parts.push(`<text x="${PAD}" y="232" class="note">Private: contributions to private repositories, including company work · Updated ${updated}</text>`);
-
-  // Right column: contributions per year, public stacked under private.
-  const plot = { left: 400, right: WIDTH - PAD, top: 72, bottom: 196 };
-  const plotW = plot.right - plot.left;
-  const plotH = plot.bottom - plot.top;
-  const scale = niceScale(Math.max(...c.years.map((y) => y.total)));
-  const yOf = (v) => plot.bottom - (v / scale.max) * plotH;
-
-  for (let v = 0; v <= scale.max; v += scale.step) {
-    const y = r2(yOf(v));
-    const stroke = v === 0 ? t.axis : t.grid;
-    parts.push(`<line x1="${plot.left}" y1="${y}" x2="${plot.right}" y2="${y}" stroke="${stroke}" stroke-width="1"/>`);
-    parts.push(`<text x="${plot.left - 8}" y="${r2(y + 4)}" class="tick" text-anchor="end">${formatNumber(v)}</text>`);
-  }
-
-  const slot = plotW / c.years.length;
-  const barW = Math.min(24, slot * 0.6);
-  const labelEvery = slot < 34 ? 2 : 1;
-  const peak = c.years.reduce((best, y) => (y.total > best.total ? y : best), c.years[0]);
-  const last = c.years.length - 1;
-
-  c.years.forEach((y, i) => {
-    const cx = plot.left + slot * (i + 0.5);
-    const x = cx - barW / 2;
-    const publicH = (y.public / scale.max) * plotH;
-    const privateH = (y.private / scale.max) * plotH;
-    if (publicH > 0 && privateH > 0) {
-      parts.push(`<rect x="${r2(x)}" y="${r2(plot.bottom - publicH)}" width="${r2(barW)}" height="${r2(publicH)}" fill="${t.series[0]}"/>`);
-      const topH = Math.max(privateH - GAP, 1);
-      parts.push(`<path d="${columnPath(x, plot.bottom - publicH - GAP - topH, barW, topH)}" fill="${t.series[1]}"/>`);
-    } else if (publicH > 0) {
-      parts.push(`<path d="${columnPath(x, plot.bottom - publicH, barW, publicH)}" fill="${t.series[0]}"/>`);
-    } else if (privateH > 0) {
-      parts.push(`<path d="${columnPath(x, plot.bottom - privateH, barW, privateH)}" fill="${t.series[1]}"/>`);
+  // label ....... value, with a dotted leader; optional share bar underneath.
+  const item = (label, value, { bold = false, size = 13, bar = null } = {}) => {
+    const font = bold ? 'mono700' : 'mono400';
+    const valueWidth = measure(value, font, size);
+    const shown = truncate(label, font, size, WIDTH - 2 * PAD - valueWidth - 24);
+    const x1 = PAD + measure(shown, font, size) + 6;
+    const x2 = WIDTH - PAD - valueWidth - 6;
+    const style = `font-size:${size}px${bold ? ';font-weight:700' : ''}`;
+    out.push(`<text x="${PAD}" y="${y}" style="${style}">${escapeXml(shown)}</text>`);
+    if (x2 > x1) {
+      out.push(`<line x1="${r2(x1)}" y1="${y - 3}" x2="${r2(x2)}" y2="${y - 3}" stroke="${t.rule}" stroke-dasharray="1 4" stroke-linecap="round"/>`);
     }
-    if ((last - i) % labelEvery === 0) {
-      parts.push(`<text x="${r2(cx)}" y="${plot.bottom + 18}" class="tick" text-anchor="middle">${y.year}</text>`);
+    out.push(`<text x="${WIDTH - PAD}" y="${y}" text-anchor="end" style="${style}">${escapeXml(value)}</text>`);
+    if (bar !== null) {
+      out.push(`<rect x="${PAD}" y="${y + 6}" width="${r2(Math.max((WIDTH - 2 * PAD) * bar, 1.5))}" height="3" fill="${t.ink}"/>`);
     }
-  });
+  };
 
-  // One direct label: the busiest year.
-  if (peak.total > 0) {
-    const i = c.years.indexOf(peak);
-    const cx = plot.left + slot * (i + 0.5);
-    parts.push(`<text x="${r2(cx)}" y="${r2(yOf(peak.total) - 6)}" class="small halo" text-anchor="middle">${formatNumber(peak.total)}</text>`);
-  }
+  // Header
+  y = 54; center(stats.profile.name.toUpperCase(), 'name');
+  y += 24; center(stats.profile.role.toUpperCase(), 'role');
+  y += 18; center(`github.com/${stats.login}`, 'small dim');
+  y += 20; dashed();
+  y += 22;
+  out.push(`<text x="${PAD}" y="${y}" class="small dim">${updated}</text>` +
+    `<text x="${WIDTH - PAD}" y="${y}" text-anchor="end" class="small dim">NO. ${String(c.total).padStart(6, '0')}</text>`);
+  y += 14; dashed();
 
-  const perYear = c.years.map((y) => `${y.year}: ${formatNumber(y.total)} (${formatNumber(y.public)} public, ${formatNumber(y.private)} private)`);
-  return frame({
-    height,
-    theme,
-    title: `${stats.login}'s GitHub contributions`,
-    desc: `${formatNumber(c.total)} contributions since ${c.firstYear}: ${formatNumber(c.public)} public and ` +
-      `${formatNumber(c.private)} private. Past year: ${formatNumber(c.pastYear.total)}. Per year - ${perYear.join('; ')}. Updated ${updated}.`,
-    body: parts.join('\n'),
-  });
-}
+  // Activity: every contribution GitHub counts, private ones included.
+  y += 26; heading('ACTIVITY', 'GITHUB CONTRIBUTIONS');
+  y += 8;
+  for (const row of stats.activityRows) { y += 20; item(row.label, formatNumber(row.total)); }
+  y += 14; dashed();
+  y += 22; item('PUBLIC', formatNumber(c.public));
+  y += 20; item('PRIVATE', formatNumber(c.private));
+  y += 12; double();
+  y += 30; item('TOTAL', formatNumber(c.total), { bold: true, size: 20 });
+  y += 12; double();
+  y += 26; item('PAST 12 MONTHS', formatNumber(c.pastYear.total));
+  y += 16; dashed();
 
-export function renderLanguagesCard(stats, theme) {
-  const t = THEMES[theme];
-  const { items, other } = stats.languages;
-  const rows = other ? [...items, other] : items;
-  const rowH = 28;
-  const firstRow = 60;
-  const height = rows.length ? firstRow + rows.length * rowH + 12 : 120;
-  const parts = [];
+  // Stack: languages of the lines this person changed.
+  y += 26; heading('STACK', 'LINES I CHANGED, 12 MO');
+  y += 8;
+  const rows = s.other ? [...s.items, s.other] : s.items;
+  if (!rows.length) { y += 24; center('NO CODE CHANGES FOUND', 'small dim'); }
+  for (const row of rows) { y += 24; item(row.name.toUpperCase(), formatShare(row.share), { bar: row.share }); }
+  y += 20; dashed();
+  y += 22; item('COMMITS READ', formatNumber(s.commits));
+  y += 20; item('LINES CHANGED', formatNumber(s.lines));
+  y += 20; item('REPOSITORIES', s.includesPrivate ? 'PUBLIC + PRIVATE' : 'PUBLIC ONLY');
 
-  parts.push(`<text x="${PAD}" y="40" class="title">Languages</text>`);
-  parts.push(`<text x="${WIDTH - PAD}" y="40" class="small" text-anchor="end">Share of code in my public repositories</text>`);
+  // Footer
+  y += 74; out.push(`<text x="${WIDTH / 2}" y="${y}" text-anchor="middle" class="barcode">${escapeXml(barcodeText(stats.login))}</text>`);
+  y += 34; center('THANK YOU FOR VISITING', 'role b');
+  y += 18; center('printed daily from GitHub data', 'note');
+  const height = y + 40;
 
-  if (!rows.length) {
-    parts.push(`<text x="${PAD}" y="84" class="label">No language data yet.</text>`);
-  }
+  const stackText = rows.map((row) => `${row.name} ${formatShare(row.share)}`).join(', ') || 'none';
+  const desc = `${formatNumber(c.total)} GitHub contributions since ${c.firstYear} ` +
+    `(${formatNumber(c.public)} public, ${formatNumber(c.private)} private); ${formatNumber(c.pastYear.total)} in the past 12 months. ` +
+    `Languages by lines changed in the past 12 months: ${stackText}. Updated ${updated}.`;
 
-  const labelW = 132;
-  const barLeft = PAD + labelW + 12;
-  const barMax = WIDTH - PAD - barLeft - 56; // room for the share label at the tip
-  const maxShare = Math.max(...rows.map((row) => row.share), 0);
-  const barH = 12;
-
-  rows.forEach((row, i) => {
-    const cy = firstRow + i * rowH + rowH / 2;
-    const w = maxShare ? Math.max((row.share / maxShare) * barMax, 2) : 0;
-    const fill = row === other ? t.muted : t.series[0];
-    parts.push(`<text x="${PAD}" y="${r2(cy + 4.5)}" class="label" style="fill:${t.ink}">${escapeXml(truncate(row.name, 13, labelW))}</text>`);
-    parts.push(`<path d="${barPath(barLeft, cy - barH / 2, w, barH)}" fill="${fill}"/>`);
-    parts.push(`<text x="${r2(barLeft + w + 8)}" y="${r2(cy + 4)}" class="small">${formatShare(row.share)}</text>`);
-  });
-
-  const listed = rows.map((row) => `${row.name} ${formatShare(row.share)}`).join(', ');
-  return frame({
-    height,
-    theme,
-    title: `Languages in ${stats.login}'s public repositories`,
-    desc: `Share of code by size: ${listed || 'none'}.`,
-    body: parts.join('\n'),
-  });
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${height}" viewBox="0 0 ${WIDTH} ${height}" role="img" aria-labelledby="title desc">
+<title id="title">${escapeXml(`${stats.profile.name} - GitHub receipt`)}</title>
+<desc id="desc">${escapeXml(desc)}</desc>
+<style>${FONT_FACES}
+text { font-family: Receipt, ui-monospace, monospace; font-size: 13px; fill: ${t.ink}; }
+.b { font-weight: 700; }
+.name { font-size: 24px; font-weight: 700; letter-spacing: 1px; }
+.role { font-size: 12px; letter-spacing: 3px; }
+.small { font-size: 12px; }
+.note { font-size: 11px; fill: ${t.dim}; }
+.dim { fill: ${t.dim}; }
+.barcode { font-family: Barcode; font-size: 56px; }
+.print { animation: print 1.4s cubic-bezier(.2,.8,.2,1) backwards; }
+@keyframes print { from { transform: translateY(-40px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .print { animation: none; } }
+</style>
+${paper(t, height)}
+<g class="print">
+${out.join('\n')}
+</g>
+</svg>
+`;
 }

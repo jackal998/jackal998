@@ -1,25 +1,35 @@
 {
+  "profile": { "name": "Octo Cat", "role": "Back End Developer" },
   "login": "octocat",
   "generatedAt": "2026-09-26T03:00:00.000Z",
-  "pastYear": { "calendarTotal": 1864, "restricted": 1502 },
-  "years": [
-    { "year": 2016, "calendarTotal": 96, "restricted": 0, "commits": 90, "issues": 0, "pullRequests": 0, "reviews": 0, "repositories": 6 },
-    { "year": 2017, "calendarTotal": 12, "restricted": 0, "commits": 11, "issues": 0, "pullRequests": 0, "reviews": 0, "repositories": 1 },
-    { "year": 2018, "calendarTotal": 0, "restricted": 0, "commits": 0, "issues": 0, "pullRequests": 0, "reviews": 0, "repositories": 0 },
-    { "year": 2019, "calendarTotal": 0, "restricted": 0, "commits": 0, "issues": 0, "pullRequests": 0, "reviews": 0, "repositories": 0 },
-    { "year": 2020, "calendarTotal": 4, "restricted": 0, "commits": 4, "issues": 0, "pullRequests": 0, "reviews": 0, "repositories": 0 },
-    { "year": 2021, "calendarTotal": 310, "restricted": 120, "commits": 170, "issues": 4, "pullRequests": 12, "reviews": 0, "repositories": 4 },
-    { "year": 2022, "calendarTotal": 1422, "restricted": 1180, "commits": 190, "issues": 10, "pullRequests": 30, "reviews": 8, "repositories": 4 },
-    { "year": 2023, "calendarTotal": 1655, "restricted": 1490, "commits": 140, "issues": 5, "pullRequests": 14, "reviews": 3, "repositories": 3 },
-    { "year": 2024, "calendarTotal": 1702, "restricted": 1611, "commits": 80, "issues": 2, "pullRequests": 5, "reviews": 2, "repositories": 2 },
-    { "year": 2025, "calendarTotal": 1830, "restricted": 1540, "commits": 250, "issues": 12, "pullRequests": 20, "reviews": 5, "repositories": 3 },
-    { "year": 2026, "calendarTotal": 1391, "restricted": 1102, "commits": 240, "issues": 20, "pullRequests": 25, "reviews": 1, "repositories": 3 }
-  ],
-  "repos": [
-    { "name": "rails-app", "languages": [{ "name": "Ruby", "size": 182000 }, { "name": "HTML", "size": 64000 }, { "name": "JavaScript", "size": 22000 }, { "name": "SCSS", "size": 9000 }] },
-    { "name": "photo-tool", "languages": [{ "name": "Python", "size": 151000 }, { "name": "Shell", "size": 3100 }] },
-    { "name": "scanner", "languages": [{ "name": "C", "size": 18000 }, { "name": "C++", "size": 5200 }, { "name": "Makefile", "size": 2400 }] },
-    { "name": "bot", "languages": [{ "name": "Ruby", "size": 41000 }, { "name": "Dockerfile", "size": 700 }] },
-    { "name": "empty", "languages": [] }
-  ]
+  "activity": {
+    "pastYear": { "calendarTotal": 1864, "restricted": 1502 },
+    "years": [
+      { "year": 2016, "calendarTotal": 96, "restricted": 0 },
+      { "year": 2017, "calendarTotal": 12, "restricted": 0 },
+      { "year": 2018, "calendarTotal": 0, "restricted": 0 },
+      { "year": 2019, "calendarTotal": 0, "restricted": 0 },
+      { "year": 2020, "calendarTotal": 4, "restricted": 0 },
+      { "year": 2021, "calendarTotal": 310, "restricted": 120 },
+      { "year": 2022, "calendarTotal": 1422, "restricted": 1180 },
+      { "year": 2023, "calendarTotal": 1655, "restricted": 1490 },
+      { "year": 2024, "calendarTotal": 1702, "restricted": 1611 },
+      { "year": 2025, "calendarTotal": 1830, "restricted": 1540 },
+      { "year": 2026, "calendarTotal": 1391, "restricted": 1102 }
+    ]
+  },
+  "stack": {
+    "from": "2025-09-26T03:00:00.000Z",
+    "to": "2026-09-26T03:00:00.000Z",
+    "commits": 1240,
+    "lines": 200000,
+    "languages": {
+      "Ruby": 126000, "Python": 30000, "TypeScript": 18000, "HTML+ERB": 12000,
+      "JavaScript": 6000, "SQL": 3000, "Shell": 2600, "SCSS": 1400, "Dockerfile": 1000
+    },
+    "repos": 14,
+    "privateRepos": 9,
+    "capped": false,
+    "log": [{ "label": "work", "repos": 9, "privateRepos": 9, "commits": 980 }]
+  }
 }
