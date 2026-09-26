@@ -47,10 +47,11 @@ async function request(token, url, init, { sensitive }) {
       (res.status === 403 && (retryAfter > 0 || res.headers.get('x-ratelimit-remaining') === '0'));
     // Private repository names can appear in error bodies; keep them out of public logs.
     const detail = sensitive ? '' : `: ${(await res.text()).slice(0, 500)}`;
-    lastError = Object.assign(new Error(`GitHub API HTTP ${res.status}${detail}`), {
+    lastError = Object.assign(new Error(`GitHub API HTTP ${res.status}${limited ? ' (rate limited)' : ''}${detail}`), {
       status: res.status,
       // Set when an organisation's SAML SSO has not authorised this token.
       sso: res.headers.has('x-github-sso'),
+      rateLimited: limited,
     });
     if (!(limited || res.status >= 500) || attempt === ATTEMPTS) break;
 
@@ -160,12 +161,14 @@ const repoPath = (nameWithOwner) => nameWithOwner.split('/').map(encodeURICompon
 
 // A repository the token can list but not read (no access, SSO not
 // authorised, empty, blocked) is skipped instead of failing the whole run.
+// A rate limit is not a repository problem: skipping would publish numbers
+// missing whatever was left, so it fails the run and keeps the last receipts.
 const UNREADABLE = new Set([403, 404, 409, 451]);
 async function orSkip(promise, onSkip) {
   try {
     return await promise;
   } catch (error) {
-    if (!UNREADABLE.has(error.status)) throw error;
+    if (!UNREADABLE.has(error.status) || error.rateLimited) throw error;
     onSkip(error);
     return null;
   }

@@ -91,8 +91,11 @@ function fakeGitHub({ failWith, unreadable = {} } = {}) {
     if (list) {
       const blocked = unreadable[list[1]];
       if (blocked) {
-        return json({ message: `blocked: ${list[1]}` }, blocked.status,
-          blocked.sso ? { 'x-github-sso': 'required; url=https://github.com/orgs/acme/sso?authorization_request=x' } : {});
+        return json({ message: `blocked: ${list[1]}` }, blocked.status, {
+          ...(blocked.sso ? { 'x-github-sso': 'required; url=https://github.com/orgs/acme/sso?authorization_request=x' } : {}),
+          // Out of requests until an hour from now: too long to wait for.
+          ...(blocked.rateLimited ? { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(Math.floor(Date.now() / 1000) + 3600) } : {}),
+        });
       }
       assert.equal(u.searchParams.get('author'), 'me');
       seen.lists.push(`${token}:${list[1]}`);
@@ -202,4 +205,12 @@ test('repositories the token cannot read are skipped, never fatal, and stay secr
 test('other failures still stop the run', async () => {
   fakeGitHub({ unreadable: { 'acme/billing': { status: 401 } } });
   await assert.rejects(fetchStack({ sources, login: 'me', now: new Date('2026-03-01T00:00:00Z') }), /HTTP 401/);
+});
+
+test('a rate limit stops the run instead of skipping the repository', async () => {
+  fakeGitHub({ unreadable: { 'acme/billing': { status: 403, rateLimited: true } } });
+  await assert.rejects(
+    fetchStack({ sources, login: 'me', now: new Date('2026-03-01T00:00:00Z') }),
+    (error) => error.message === 'GitHub API HTTP 403 (rate limited)' && error.rateLimited,
+  );
 });
