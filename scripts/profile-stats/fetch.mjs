@@ -3,8 +3,10 @@
 // Activity totals use the workflow's own GITHUB_TOKEN, which only sees public
 // data; private contributions still arrive as GitHub's anonymous
 // `restrictedContributionsCount` when "Private contributions" is enabled, and
-// are included in the daily counts of the contribution calendar. (GitHub does
-// not itemise them by type, not even for the owner's own `repo` token.)
+// are included in the daily counts of the contribution calendar. GitHub does
+// not itemise them by type, not even for the owner's own `repo` token, so
+// contributions by type are counted from the repositories instead (see
+// fetchTypes), the same way for public and private ones.
 //
 // The language breakdown looks at the files changed in each of the user's
 // commits. Optional read-only tokens let it include private repositories.
@@ -104,18 +106,11 @@ const ACTIVITY_QUERY = `
           weeks { contributionDays { date contributionCount } }
         }
         restrictedContributionsCount
-        totalCommitContributions
-        totalPullRequestContributions
-        totalPullRequestReviewContributions
-        totalIssueContributions
-        totalRepositoryContributions
       }
     }
   }
 `;
 
-// The per-type totals only count public contributions; the private ones are
-// all in `restricted`.
 export async function fetchActivity({ token, login }) {
   const data = await graphql(token, ACTIVITY_QUERY, { login });
   if (!data.user) throw new Error(`GitHub user "${login}" not found`);
@@ -123,16 +118,46 @@ export async function fetchActivity({ token, login }) {
   return {
     calendarTotal: c.contributionCalendar.totalContributions,
     restricted: c.restrictedContributionsCount,
-    byType: {
-      commits: c.totalCommitContributions,
-      pullRequests: c.totalPullRequestContributions,
-      reviews: c.totalPullRequestReviewContributions,
-      issues: c.totalIssueContributions,
-      repositories: c.totalRepositoryContributions,
-    },
     days: c.contributionCalendar.weeks.flatMap((week) =>
       week.contributionDays.map((day) => ({ date: day.date, count: day.contributionCount }))),
   };
+}
+
+// --- Types: contributions by type, public and private -------------------------
+
+const day = (date) => date.toISOString().slice(0, 10);
+
+async function searchCount(source, path, q) {
+  const data = await rest(source.token, `${path}?q=${encodeURIComponent(q)}&per_page=1`, source);
+  return { count: data.total_count, incomplete: Boolean(data.incomplete_results) };
+}
+
+/**
+ * Pull requests and issues opened, pull requests reviewed and repositories
+ * created in the window, counted with the search API. Private counts need a
+ * token that reads private repositories; without one only public is counted.
+ * (Commits come from fetchStack, which reads them anyway.)
+ */
+export async function fetchTypes({ source, login, now = new Date(), windowDays = 365, includePrivate = false }) {
+  const range = `${day(new Date(now.getTime() - windowDays * DAY_MS))}..${day(now)}`;
+  const searches = {
+    pullRequests: ['/search/issues', `is:pr author:${login} created:${range}`],
+    issues: ['/search/issues', `is:issue author:${login} created:${range}`],
+    // Pull requests, not individual reviews: search cannot count those.
+    reviews: ['/search/issues', `is:pr reviewed-by:${login} -author:${login} updated:${range}`],
+    repositories: ['/search/repositories', `user:${login} created:${range}`],
+  };
+  const result = { incomplete: false };
+  for (const visibility of includePrivate ? ['public', 'private'] : ['public']) {
+    const counts = {};
+    for (const [key, [path, q]] of Object.entries(searches)) {
+      const found = await searchCount(source, path, `${q} is:${visibility}`);
+      counts[key] = found.count;
+      result.incomplete ||= found.incomplete;
+    }
+    result[visibility] = counts;
+  }
+  return result;
 }
 
 // --- Stack: lines changed per language in the user's own commits -------------
@@ -245,6 +270,8 @@ export async function fetchStack({ sources, login, now = new Date(), windowDays 
   const log = [];
   const withCommits = new Set(); // repositories whose commits were actually read
   const privateRead = new Set();
+  // Every commit listed, merges included and before any cap, as GitHub counts them.
+  const commitsByVisibility = { public: 0, private: 0 };
   // Aggregated per kind of repository. Also a health check in the logs: if the
   // organisation line drops to zero, the read token lost access.
   const categories = {};
@@ -260,6 +287,7 @@ export async function fetchStack({ sources, login, now = new Date(), windowDays 
       if (found === null) continue;
       read.push(repo);
       listed.push(...found);
+      commitsByVisibility[repo.isPrivate ? 'private' : 'public'] += found.length;
       if (!found.length) continue;
       withCommits.add(repo.id);
       if (repo.isPrivate) privateRead.add(repo.id);
@@ -316,6 +344,7 @@ export async function fetchStack({ sources, login, now = new Date(), windowDays 
     from: from.toISOString(),
     to: to.toISOString(),
     commits,
+    commitsByVisibility,
     lines: added + removed,
     added,
     removed,

@@ -17,18 +17,20 @@ export function summarizeContributions(activity) {
 
 export const CONTRIBUTION_TYPES = ['commits', 'pullRequests', 'reviews', 'issues', 'repositories'];
 
-// Public contributions by type; the private ones stay one anonymous number.
-// Anything the types leave over (GitHub computes its totals separately, so
-// they can drift by a few) is "other", so the rows add up to the public total.
-export function summarizeTypes(activity) {
-  const items = CONTRIBUTION_TYPES.map((key) => ({ key, count: activity.byType[key] ?? 0 }));
-  const itemised = items.reduce((acc, item) => acc + item.count, 0);
-  const rest = activity.calendarTotal - activity.restricted - itemised;
+// Contributions by type, public and private side by side, counted the same
+// way from the repositories (commits from the stack, the rest from search).
+// GitHub's own totals count slightly differently, so the rows are not meant
+// to add up to them. `private` is null when no token could read private work.
+export function summarizeTypes(types, stack) {
+  const commits = stack.commitsByVisibility ?? { public: 0, private: 0 };
+  const count = (visibility, key) => {
+    if (!types[visibility]) return null;
+    return key === 'commits' ? commits[visibility] : types[visibility][key] ?? 0;
+  };
   return {
-    items,
-    other: Math.max(rest, 0),
-    // Itemised more than the public total: the rows cannot add up.
-    excess: Math.max(-rest, 0),
+    items: CONTRIBUTION_TYPES.map((key) => ({ key, public: count('public', key), private: count('private', key) })),
+    includesPrivate: Boolean(types.private),
+    incomplete: Boolean(types.incomplete),
   };
 }
 
@@ -142,7 +144,7 @@ export function buildStats(raw) {
     login: raw.login,
     generatedAt: raw.generatedAt,
     contributions: summarizeContributions(raw.activity),
-    types: summarizeTypes(raw.activity),
+    types: summarizeTypes(raw.types, raw.stack),
     calendar: summarizeCalendar(raw.activity.days),
     stack: summarizeStack(raw.stack),
   };

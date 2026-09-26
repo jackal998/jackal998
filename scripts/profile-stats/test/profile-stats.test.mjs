@@ -64,15 +64,20 @@ test('one huge file change is capped, added and removed alike', () => {
   assert.deepEqual(splitChanged({ additions: 3000, deletions: 1000 }), { added: 750, removed: 250 });
 });
 
-test('public contributions by type always add up to the public total', () => {
-  const types = summarizeTypes(raw.activity);
-  assert.deepEqual(types.items.map((i) => i.count), [250, 60, 40, 8, 4]);
-  assert.equal(types.other, 0);
-  // A gap in GitHub's separately computed totals becomes "other".
-  const drift = summarizeTypes({ ...raw.activity, calendarTotal: raw.activity.calendarTotal + 5 });
-  assert.equal(drift.other, 5);
-  assert.equal(drift.excess, 0);
-  assert.equal(summarizeTypes({ ...raw.activity, calendarTotal: 1800 }).excess, 64);
+test('contributions by type, public and private counted the same way', () => {
+  const types = summarizeTypes(raw.types, raw.stack);
+  assert.deepEqual(types.items.map((i) => [i.key, i.public, i.private]), [
+    ['commits', 150, 1130], // from the commits the stack listed
+    ['pullRequests', 60, 240],
+    ['reviews', 12, 95],
+    ['issues', 8, 30],
+    ['repositories', 4, 6],
+  ]);
+  assert.equal(types.includesPrivate, true);
+  // Without a read token nothing private is counted, and it says so.
+  const publicOnly = summarizeTypes({ public: raw.types.public, incomplete: false }, raw.stack);
+  assert.ok(publicOnly.items.every((i) => i.private === null));
+  assert.equal(publicOnly.includesPrivate, false);
 });
 
 test('calendar weeks, streaks and the busiest days', () => {
@@ -142,8 +147,10 @@ test('receipts print the numbers, escape names and never print NaN', () => {
       assert.equal(heightOf(activity), heightOf(stack));
       assert.match(activity, />1,864</);
       assert.match(activity, />NO\. 001864</);
-      assert.match(activity, />PUBLIC, BY TYPE</);
-      assert.match(activity, />PULL REQUESTS</);
+      assert.match(activity, />BY TYPE</);
+      assert.match(activity, />PRS REVIEWED</);
+      assert.match(activity, />1,130</); // private commits
+      assert.match(activity, />counted from repositories; totals by GitHub</);
       assert.match(activity, />GMT\+8</);
       assert.match(activity, />15:00-16:00</);
       assert.match(activity, />\* PRIVATE INCLUDES COMPANY WORK \*</);
@@ -162,12 +169,14 @@ test('receipts without any code changes or activity say so', () => {
   const empty = structuredClone(raw);
   Object.assign(empty.stack, { languages: {}, lines: 0, added: 0, removed: 0, commits: 0, privateRepos: 0, categories: {}, hours: Array(24).fill(0) });
   Object.assign(empty.activity, { calendarTotal: 0, restricted: 0, days: empty.activity.days.map((d) => ({ ...d, count: 0 })) });
-  empty.activity.byType = { commits: 0, pullRequests: 0, reviews: 0, issues: 0, repositories: 0 };
+  empty.stack.commitsByVisibility = { public: 0, private: 0 };
+  empty.types = { public: { pullRequests: 0, issues: 0, reviews: 0, repositories: 0 }, incomplete: false };
   const { activity, stack } = renderReceipts(buildStats(empty), 'light');
   assert.match(stack, /NO CODE CHANGES FOUND/);
   assert.match(stack, />public repositories only</);
   assert.doesNotMatch(stack, />SOURCE</);
   assert.doesNotMatch(activity, /PEAK HOUR|BUSIEST|COMPANY WORK/);
+  assert.match(activity, />-</); // nothing private counted
   for (const svg of [activity, stack]) assert.doesNotMatch(printed(svg), /NaN|undefined|Infinity|null/);
 });
 

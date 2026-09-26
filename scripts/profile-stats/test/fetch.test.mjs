@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
-import { categoryOf, fetchActivity, fetchStack, graphql } from '../fetch.mjs';
+import { categoryOf, fetchActivity, fetchStack, fetchTypes, graphql } from '../fetch.mjs';
 
 const realFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = realFetch; });
@@ -25,11 +25,6 @@ test('fetchActivity reads the past year of contributions in one query', async ()
         { contributionDays: [{ date: '2026-03-08', contributionCount: 15 }, { date: '2026-03-09', contributionCount: 0 }] },
       ] },
       restrictedContributionsCount: 30,
-      totalCommitContributions: 6,
-      totalPullRequestContributions: 2,
-      totalPullRequestReviewContributions: 1,
-      totalIssueContributions: 1,
-      totalRepositoryContributions: 0,
     } } } });
   };
 
@@ -38,9 +33,35 @@ test('fetchActivity reads the past year of contributions in one query', async ()
   assert.deepEqual(activity, {
     calendarTotal: 40,
     restricted: 30,
-    byType: { commits: 6, pullRequests: 2, reviews: 1, issues: 1, repositories: 0 },
     days: [{ date: '2026-03-07', count: 25 }, { date: '2026-03-08', count: 15 }, { date: '2026-03-09', count: 0 }],
   });
+});
+
+test('types are searched for public and private work alike', async () => {
+  const queries = [];
+  globalThis.fetch = async (url, init) => {
+    const u = new URL(url);
+    assert.equal(init.method, 'GET');
+    const q = u.searchParams.get('q');
+    queries.push(`${u.pathname} ${q}`);
+    const visibility = q.endsWith('is:private') ? 2 : 1;
+    const base = { '/search/repositories': 1, '/search/issues': q.startsWith('is:pr reviewed-by') ? 3 : q.startsWith('is:pr') ? 10 : 5 }[u.pathname];
+    return json({ total_count: base * visibility, incomplete_results: false });
+  };
+  const types = await fetchTypes({ source: { token: 't', sensitive: true }, login: 'me', now: new Date('2026-03-01T00:00:00Z'), includePrivate: true });
+  assert.deepEqual(types, {
+    incomplete: false,
+    public: { pullRequests: 10, issues: 5, reviews: 3, repositories: 1 },
+    private: { pullRequests: 20, issues: 10, reviews: 6, repositories: 2 },
+  });
+  assert.equal(queries.length, 8);
+  assert.ok(queries.includes('/search/issues is:pr author:me created:2025-03-01..2026-03-01 is:private'));
+  assert.ok(queries.includes('/search/issues is:pr reviewed-by:me -author:me updated:2025-03-01..2026-03-01 is:public'));
+  assert.ok(queries.includes('/search/repositories user:me created:2025-03-01..2026-03-01 is:private'));
+
+  const publicOnly = await fetchTypes({ source: { token: 't' }, login: 'me', now: new Date('2026-03-01T00:00:00Z') });
+  assert.equal(publicOnly.private, undefined);
+  assert.deepEqual(publicOnly.public, { pullRequests: 10, issues: 5, reviews: 3, repositories: 1 });
 });
 
 test('unknown user is an error', async () => {
@@ -125,6 +146,8 @@ test('fetchStack counts lines per language in the user\'s own commits', async ()
   assert.equal(stack.lines, 1065);
   assert.deepEqual([stack.added, stack.removed], [30 + 5 + 1000 + 12, 10 + 5 + 3]);
   assert.equal(stack.commits, 4); // includes a4, a rename that changes no lines
+  // Every commit listed, merge a2 included, as GitHub counts contributions.
+  assert.deepEqual(stack.commitsByVisibility, { public: 1, private: 4 });
   assert.equal(stack.repos, 2);
   assert.equal(stack.reposWithCommits, 2);
   assert.equal(stack.privateRepos, 1);

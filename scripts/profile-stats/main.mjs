@@ -5,7 +5,8 @@
 //
 // An optional READ_TOKEN (a classic token with the `repo` scope, authorised
 // for the employer's SSO) adds private repositories - personal and company -
-// to the language breakdown. The code only ever reads with it.
+// to the language breakdown and the contribution types. The code only ever
+// reads with it.
 //
 // Everything is rendered and checked before any file is written, so a failed
 // API call, a sanity check or the leak guard leaves the previous receipts in
@@ -15,7 +16,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { buildStats, rankLanguages } from './aggregate.mjs';
-import { fetchActivity, fetchStack, tokenScopes } from './fetch.mjs';
+import { fetchActivity, fetchStack, fetchTypes, tokenScopes } from './fetch.mjs';
 import { assertNoLeak } from './guard.mjs';
 import { formatNumber, formatShare, renderHeader, renderReceipts } from './render.mjs';
 
@@ -52,8 +53,18 @@ async function loadRaw() {
   const now = new Date();
   const activity = await fetchActivity({ token: process.env.GITHUB_TOKEN, login: args.login });
   const stack = await fetchStack({ sources: stackSources(), login: args.login, now, timeZone: PROFILE.timeZone });
+  // GitHub only reports private contributions as one number, so types are
+  // counted from the repositories, privately only with the read token.
+  const types = await fetchTypes({
+    source: process.env.READ_TOKEN
+      ? { token: process.env.READ_TOKEN, sensitive: true }
+      : { token: process.env.GITHUB_TOKEN, sensitive: false },
+    login: args.login,
+    now,
+    includePrivate: Boolean(process.env.READ_TOKEN),
+  });
   const readTokenScopes = process.env.READ_TOKEN ? await tokenScopes(process.env.READ_TOKEN) : undefined;
-  return { profile: PROFILE, login: args.login, generatedAt: now.toISOString(), activity, stack, readTokenScopes };
+  return { profile: PROFILE, login: args.login, generatedAt: now.toISOString(), activity, types, stack, readTokenScopes };
 }
 
 // Aggregates only: Actions logs of a public repository are public.
@@ -66,8 +77,8 @@ function summaryLines(raw, stats) {
     log('Note: no private contributions reported. Enable "Private contributions" in the profile\'s contribution settings to include them.');
   }
   const types = stats.types;
-  log(`Public by type: ${types.items.map((i) => `${i.key} ${formatNumber(i.count)}`).join(', ')}; other ${formatNumber(types.other)}` +
-    (types.excess ? `; itemised ${formatNumber(types.excess)} more than the public total` : ''));
+  log(`By type, counted (public / private): ${types.items.map((i) => `${i.key} ${formatNumber(i.public)} / ${i.private === null ? '-' : formatNumber(i.private)}`).join(', ')}` +
+    (types.incomplete ? ' (search results incomplete)' : ''));
   const cal = stats.calendar;
   log(`Calendar: ${cal.weeks.length} weeks, active on ${cal.activeDays} of ${cal.days} days, ` +
     `longest streak ${cal.longestStreak}, current streak ${cal.currentStreak}, busiest weekday ${cal.busiestWeekday ?? '-'}`);
