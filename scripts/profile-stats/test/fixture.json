@@ -1,0 +1,20 @@
+{
+  "profile": { "name": "Octo Cat", "role": "Back End Developer" },
+  "login": "octocat",
+  "generatedAt": "2026-09-26T03:00:00.000Z",
+  "activity": { "calendarTotal": 1864, "restricted": 1502 },
+  "stack": {
+    "from": "2025-09-26T03:00:00.000Z",
+    "to": "2026-09-26T03:00:00.000Z",
+    "commits": 1240,
+    "lines": 200000,
+    "languages": {
+      "Ruby": 126000, "Python": 30000, "TypeScript": 18000, "HTML+ERB": 12000,
+      "JavaScript": 6000, "SQL": 3000, "Shell": 2600, "SCSS": 1400, "Dockerfile": 1000
+    },
+    "repos": 14,
+    "privateRepos": 9,
+    "capped": false,
+    "log": [{ "label": "work", "repos": 9, "privateRepos": 9, "commits": 980 }]
+  }
+}

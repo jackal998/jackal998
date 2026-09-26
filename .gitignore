@@ -1,0 +1,6 @@
+# Local secrets must never be committed to this public repository.
+.env
+.env.*
+*.pem
+*.key
+node_modules/
