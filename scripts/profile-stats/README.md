@@ -1,9 +1,10 @@
 # Profile receipt
 
 A daily GitHub Actions job (`.github/workflows/profile-stats.yml`) prints the
-profile README as a receipt: contributions per year and the languages of the
-lines I changed in my own commits over the past 12 months. The result is two
-SVGs in `profile/`; the README only references those files.
+profile README as a receipt covering the past 12 months: GitHub contributions
+(public and private) and the languages of the lines I changed in my own
+commits. The result is two SVGs in `profile/`; the README only references
+those files.
 
 ```sh
 node --test scripts/profile-stats/test/*.test.mjs

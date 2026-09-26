@@ -120,21 +120,17 @@ export function renderReceipt(stats, theme) {
     `<text x="${WIDTH - PAD}" y="${y}" text-anchor="end" class="small dim">NO. ${String(c.total).padStart(6, '0')}</text>`);
   y += 14; dashed();
 
-  // Activity: every contribution GitHub counts, private ones included.
-  y += 26; heading('ACTIVITY', 'GITHUB CONTRIBUTIONS');
+  // Activity: every contribution GitHub counted in the past 12 months, private ones included.
+  y += 26; heading('ACTIVITY', 'GITHUB CONTRIBUTIONS, 12 MO');
   y += 8;
-  for (const row of stats.activityRows) { y += 20; item(row.label, formatNumber(row.total)); }
-  y += 14; dashed();
-  y += 22; item('PUBLIC', formatNumber(c.public));
+  y += 20; item('PUBLIC', formatNumber(c.public));
   y += 20; item('PRIVATE', formatNumber(c.private));
   y += 12; double();
   y += 30; item('TOTAL', formatNumber(c.total), { bold: true, size: 20 });
   y += 12; double();
-  y += 26; item('PAST 12 MONTHS', formatNumber(c.pastYear.total));
-  y += 16; dashed();
 
   // Stack: languages of the lines this person changed.
-  y += 26; heading('STACK', 'LINES I CHANGED, 12 MO');
+  y += 34; heading('STACK', 'LINES I CHANGED, 12 MO');
   y += 8;
   const rows = s.other ? [...s.items, s.other] : s.items;
   if (!rows.length) { y += 24; center('NO CODE CHANGES FOUND', 'small dim'); }
@@ -151,9 +147,9 @@ export function renderReceipt(stats, theme) {
   const height = y + 40;
 
   const stackText = rows.map((row) => `${row.name} ${formatShare(row.share)}`).join(', ') || 'none';
-  const desc = `${formatNumber(c.total)} GitHub contributions since ${c.firstYear} ` +
-    `(${formatNumber(c.public)} public, ${formatNumber(c.private)} private); ${formatNumber(c.pastYear.total)} in the past 12 months. ` +
-    `Languages by lines changed in the past 12 months: ${stackText}. Updated ${updated}.`;
+  const desc = `${formatNumber(c.total)} GitHub contributions in the past 12 months ` +
+    `(${formatNumber(c.public)} public, ${formatNumber(c.private)} private). ` +
+    `Languages by lines changed in the same period: ${stackText}. Updated ${updated}.`;
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${height}" viewBox="0 0 ${WIDTH} ${height}" role="img" aria-labelledby="title desc">
 <title id="title">${escapeXml(`${stats.profile.name} - GitHub receipt`)}</title>

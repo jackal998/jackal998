@@ -13,25 +13,19 @@ const json = (body, status = 200, headers = {}) => ({
   text: async () => JSON.stringify(body),
 });
 
-test('fetchActivity maps the overview and one collection per year', async () => {
+test('fetchActivity reads the past year of contributions in one query', async () => {
   const calls = [];
   globalThis.fetch = async (url, init) => {
     const { query, variables } = JSON.parse(init.body);
     calls.push({ auth: init.headers.Authorization, login: variables.login });
-    if (query.includes('createdAt')) {
-      return json({ data: { user: { createdAt: '2024-05-01T00:00:00Z', contributionsCollection: {
-        contributionYears: [2026, 2025], contributionCalendar: { totalContributions: 40 }, restrictedContributionsCount: 30 } } } });
-    }
-    assert.match(query, /y2026: contributionsCollection\(from: "2026-01-01T00:00:00Z", to: "2026-03-01T00:00:00.000Z"\)/);
-    const year = (total, restricted) => ({ contributionCalendar: { totalContributions: total }, restrictedContributionsCount: restricted });
-    return json({ data: { user: { y2024: year(5, 0), y2025: year(20, 15), y2026: year(10, 8) } } });
+    assert.doesNotMatch(query, /from:/); // the default window is the past year
+    return json({ data: { user: { contributionsCollection: {
+      contributionCalendar: { totalContributions: 40 }, restrictedContributionsCount: 30 } } } });
   };
 
-  const activity = await fetchActivity({ token: 't0k', login: 'someone', now: new Date('2026-03-01T00:00:00Z') });
-  assert.equal(calls.length, 2);
-  assert.ok(calls.every((c) => c.auth === 'Bearer t0k' && c.login === 'someone'));
-  assert.deepEqual(activity.pastYear, { calendarTotal: 40, restricted: 30 });
-  assert.deepEqual(activity.years.map((y) => [y.year, y.calendarTotal, y.restricted]), [[2024, 5, 0], [2025, 20, 15], [2026, 10, 8]]);
+  const activity = await fetchActivity({ token: 't0k', login: 'someone' });
+  assert.deepEqual(calls, [{ auth: 'Bearer t0k', login: 'someone' }]);
+  assert.deepEqual(activity, { calendarTotal: 40, restricted: 30 });
 });
 
 test('unknown user is an error', async () => {

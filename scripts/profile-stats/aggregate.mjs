@@ -12,28 +12,7 @@ function split(calendarTotal, restricted, label) {
 }
 
 export function summarizeContributions(activity) {
-  const years = activity.years.map((y) => ({ year: y.year, ...split(y.calendarTotal, y.restricted, String(y.year)) }));
-  const sum = (key) => years.reduce((acc, y) => acc + y[key], 0);
-  return {
-    total: sum('total'),
-    public: sum('public'),
-    private: sum('private'),
-    firstYear: years[0]?.year,
-    pastYear: split(activity.pastYear.calendarTotal, activity.pastYear.restricted, 'past year'),
-    years,
-  };
-}
-
-// Years before activity really started are folded into one line ("2016-20"),
-// so the receipt stays short without dropping any contributions.
-export function activityRows(years, threshold = 100) {
-  const start = years.findIndex((y) => y.total >= threshold);
-  if (start <= 1) return years.map((y) => ({ label: String(y.year), total: y.total }));
-  const early = years.slice(0, start);
-  return [
-    { label: `${early[0].year}-${String(early.at(-1).year).slice(2)}`, total: early.reduce((acc, y) => acc + y.total, 0) },
-    ...years.slice(start).map((y) => ({ label: String(y.year), total: y.total })),
-  ];
+  return split(activity.calendarTotal, activity.restricted, 'past 12 months');
 }
 
 // { language: weight } -> the top languages by share, the tail folded into
@@ -64,13 +43,11 @@ export function summarizeStack(stack, { top = 6 } = {}) {
 }
 
 export function buildStats(raw) {
-  const contributions = summarizeContributions(raw.activity);
   return {
     profile: raw.profile,
     login: raw.login,
     generatedAt: raw.generatedAt,
-    contributions,
-    activityRows: activityRows(contributions.years),
+    contributions: summarizeContributions(raw.activity),
     stack: summarizeStack(raw.stack),
   };
 }

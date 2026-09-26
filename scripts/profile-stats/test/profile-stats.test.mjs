@@ -1,38 +1,20 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { activityRows, buildStats, rankLanguages, summarizeContributions, summarizeStack } from '../aggregate.mjs';
+import { buildStats, rankLanguages, summarizeContributions, summarizeStack } from '../aggregate.mjs';
 import { assertNoLeak, findLeaks } from '../guard.mjs';
 import { languageOf, linesChanged } from '../languages.mjs';
 import { escapeXml, formatShare, measure, renderReceipt } from '../render.mjs';
 
 const raw = JSON.parse(readFileSync(new URL('./fixture.json', import.meta.url), 'utf8'));
 
-test('contributions split every year into public and private', () => {
-  const c = summarizeContributions(raw.activity);
-  assert.equal(c.total, 8422);
-  assert.equal(c.private, 7043);
-  assert.equal(c.public, c.total - c.private);
-  assert.equal(c.firstYear, 2016);
-  assert.deepEqual(c.pastYear, { total: 1864, private: 1502, public: 362 });
+test('past-year contributions split into public and private', () => {
+  assert.deepEqual(summarizeContributions(raw.activity), { total: 1864, private: 1502, public: 362 });
 });
 
 test('refuses to publish when private exceeds the calendar total', () => {
-  const broken = structuredClone(raw.activity);
-  broken.years[3].restricted = 5;
-  assert.throws(() => summarizeContributions(broken), /2019: private contributions \(5\) exceed/);
-});
-
-test('early low-activity years fold into one line without losing contributions', () => {
-  const years = summarizeContributions(raw.activity).years;
-  const rows = activityRows(years);
-  assert.deepEqual(rows.slice(0, 2), [{ label: '2016-20', total: 112 }, { label: '2021', total: 310 }]);
-  assert.equal(rows.length, 7);
-  assert.equal(rows.reduce((acc, r) => acc + r.total, 0), 8422);
-  // Nothing to fold when activity starts in the first or second year.
-  assert.equal(activityRows(years.slice(5)).length, 6);
-  assert.deepEqual(activityRows([{ year: 2020, total: 3 }, { year: 2021, total: 500 }]).map((r) => r.label), ['2020', '2021']);
-  assert.equal(activityRows([{ year: 2020, total: 3 }, { year: 2021, total: 5 }]).length, 2);
+  assert.throws(() => summarizeContributions({ calendarTotal: 3, restricted: 5 }),
+    /past 12 months: private contributions \(5\) exceed the calendar total \(3\)/);
 });
 
 test('stack ranks languages by lines changed and folds the tail into Other', () => {
@@ -96,9 +78,10 @@ test('receipt prints the numbers, escapes names and never prints NaN', () => {
       const svg = renderReceipt(stats, theme);
       assert.ok(svg.startsWith('<svg xmlns="http://www.w3.org/2000/svg"'));
       assert.doesNotMatch(svg, /NaN|undefined|Infinity/);
-      assert.match(svg, />8,422</);
-      assert.match(svg, />2016-20</);
-      assert.match(svg, />NO\. 008422</);
+      assert.match(svg, />1,864</);
+      assert.match(svg, />GITHUB CONTRIBUTIONS, 12 MO</);
+      assert.match(svg, />NO\. 001864</);
+      assert.doesNotMatch(svg, />20(16|21|26)</); // no per-year history any more
       assert.match(svg, />\*OCTOCAT\*</);
       assert.match(svg, /@font-face\{font-family:'Receipt';font-weight:700;src:url\(data:font\/woff2;base64,/);
     }

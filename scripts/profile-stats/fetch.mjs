@@ -1,7 +1,7 @@
 // Reads the raw numbers behind the profile receipt from the GitHub API.
 //
 // Activity totals use the workflow's own GITHUB_TOKEN, which only sees public
-// data; private contributions still arrive as GitHub's anonymous per-year
+// data; private contributions still arrive as GitHub's anonymous
 // `restrictedContributionsCount` when "Private contributions" is enabled.
 //
 // The language breakdown looks at the files changed in each of the user's
@@ -88,14 +88,14 @@ export async function tokenScopes(token) {
   return res.headers.get('x-oauth-scopes');
 }
 
-// --- Activity: contribution totals per year --------------------------------
+// --- Activity: contributions over the past 12 months -------------------------
 
-const OVERVIEW_QUERY = `
+// Without from/to, contributionsCollection covers the past year: the same
+// window as the contribution graph on the profile.
+const ACTIVITY_QUERY = `
   query ($login: String!) {
     user(login: $login) {
-      createdAt
       contributionsCollection {
-        contributionYears
         contributionCalendar { totalContributions }
         restrictedContributionsCount
       }
@@ -103,47 +103,11 @@ const OVERVIEW_QUERY = `
   }
 `;
 
-const YEAR_FIELDS = `
-  contributionCalendar { totalContributions }
-  restrictedContributionsCount
-`;
-
-// One aliased contributionsCollection per calendar year, in a single request.
-// The API caps each collection at a one-year span.
-function yearsQuery(years, now) {
-  const collections = years.map((year) => {
-    const from = `${year}-01-01T00:00:00Z`;
-    const to = year === now.getUTCFullYear() ? now.toISOString() : `${year}-12-31T23:59:59Z`;
-    return `y${year}: contributionsCollection(from: "${from}", to: "${to}") { ${YEAR_FIELDS} }`;
-  });
-  return `query ($login: String!) { user(login: $login) { ${collections.join('\n')} } }`;
-}
-
-export async function fetchActivity({ token, login, now = new Date() }) {
-  const overview = await graphql(token, OVERVIEW_QUERY, { login });
-  if (!overview.user) throw new Error(`GitHub user "${login}" not found`);
-  const pastYear = overview.user.contributionsCollection;
-
-  const firstYear = Math.min(
-    new Date(overview.user.createdAt).getUTCFullYear(),
-    ...pastYear.contributionYears,
-    now.getUTCFullYear(),
-  );
-  const yearList = [];
-  for (let year = firstYear; year <= now.getUTCFullYear(); year++) yearList.push(year);
-
-  const yearly = await graphql(token, yearsQuery(yearList, now), { login });
-  return {
-    pastYear: {
-      calendarTotal: pastYear.contributionCalendar.totalContributions,
-      restricted: pastYear.restrictedContributionsCount,
-    },
-    years: yearList.map((year) => ({
-      year,
-      calendarTotal: yearly.user[`y${year}`].contributionCalendar.totalContributions,
-      restricted: yearly.user[`y${year}`].restrictedContributionsCount,
-    })),
-  };
+export async function fetchActivity({ token, login }) {
+  const data = await graphql(token, ACTIVITY_QUERY, { login });
+  if (!data.user) throw new Error(`GitHub user "${login}" not found`);
+  const c = data.user.contributionsCollection;
+  return { calendarTotal: c.contributionCalendar.totalContributions, restricted: c.restrictedContributionsCount };
 }
 
 // --- Stack: lines changed per language in the user's own commits -------------

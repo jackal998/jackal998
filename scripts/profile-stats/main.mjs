@@ -45,7 +45,7 @@ async function loadRaw() {
   if (!process.env.GITHUB_TOKEN) throw new Error('GITHUB_TOKEN is not set');
   if (!args.login) throw new Error('Pass --login or set PROFILE_LOGIN');
   const now = new Date();
-  const activity = await fetchActivity({ token: process.env.GITHUB_TOKEN, login: args.login, now });
+  const activity = await fetchActivity({ token: process.env.GITHUB_TOKEN, login: args.login });
   const stack = await fetchStack({ sources: stackSources(), login: args.login, now });
   const readTokenScopes = process.env.READ_TOKEN ? await tokenScopes(process.env.READ_TOKEN) : undefined;
   return { profile: PROFILE, login: args.login, generatedAt: now.toISOString(), activity, stack, readTokenScopes };
@@ -56,8 +56,7 @@ function summaryLines(raw, stats) {
   const lines = [];
   const log = (line) => lines.push(line);
   const c = stats.contributions;
-  log(`Contributions: ${formatNumber(c.total)} total, ${formatNumber(c.public)} public, ${formatNumber(c.private)} private`);
-  log(`Past 12 months: ${formatNumber(c.pastYear.total)} (${formatNumber(c.pastYear.private)} private)`);
+  log(`Contributions, past 12 months: ${formatNumber(c.total)} total, ${formatNumber(c.public)} public, ${formatNumber(c.private)} private`);
   if (c.private === 0) {
     log('Note: no private contributions reported. Enable "Private contributions" in the profile\'s contribution settings to include them.');
   }
