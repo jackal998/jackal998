@@ -244,17 +244,13 @@ export async function fetchStack({ sources, login, now = new Date(), windowDays 
   }
 
   const languages = {};
-  // For comparison only: what GitHub's own data suggests - each repository's
-  // language mix (by bytes, as on its language bar) weighted by my commit count.
-  const estimate = {};
   let commits = 0;
   let lines = 0;
   let capped = false;
   const log = [];
   const privateRead = new Set(); // private repositories whose commits were actually read
-  // Each commit counts once, split across the languages of the lines it changed,
-  // so a handful of huge commits cannot dominate the mix.
-  const perCommit = {};
+  // Aggregated per kind of repository, as a health check in the logs: if the
+  // organisation line drops to zero, the read token lost access.
   const categories = {};
 
   for (const { source, repos } of perSource) {
@@ -270,11 +266,6 @@ export async function fetchStack({ sources, login, now = new Date(), windowDays 
       listed.push(...found);
       if (!found.length) continue;
       if (repo.isPrivate) privateRead.add(repo.id);
-      const bytes = await orSkip(rest(source.token, `/repos/${repoPath(repo.nameWithOwner)}/languages`, source), () => {});
-      if (!bytes) continue;
-      const total = Object.values(bytes).reduce((acc, n) => acc + n, 0);
-      if (!total) continue;
-      for (const [name, n] of Object.entries(bytes)) estimate[name] = (estimate[name] ?? 0) + (n / total) * found.length;
     }
     listed.sort((a, b) => String(b.date).localeCompare(String(a.date)));
     if (listed.length > source.maxCommits) {
@@ -288,27 +279,17 @@ export async function fetchStack({ sources, login, now = new Date(), windowDays 
       if (!detail) return;
       if ((detail.parents?.length ?? 0) > 1) return; // merge commits repeat work already counted
       analyzed++;
-      const category = (categories[categoryOf(c.repo, login)] ??= { commits: 0, lines: 0, languages: {}, perCommit: {} });
+      const category = (categories[categoryOf(c.repo, login)] ??= { commits: 0, lines: 0, languages: {} });
       category.commits++;
-      const mine = {};
-      let commitLines = 0;
       for (const file of detail.files ?? []) {
         const language = languageOf(file.filename);
         if (!language) continue;
         const n = linesChanged(file);
-        addTo(mine, language, n);
-        commitLines += n;
-      }
-      // A commit that only renames or moves files changes no lines.
-      if (!commitLines) return;
-      for (const [language, n] of Object.entries(mine)) {
         addTo(languages, language, n);
         addTo(category.languages, language, n);
-        addTo(perCommit, language, n / commitLines);
-        addTo(category.perCommit, language, n / commitLines);
+        lines += n;
+        category.lines += n;
       }
-      lines += commitLines;
-      category.lines += commitLines;
     });
     commits += analyzed;
     log.push({
@@ -337,9 +318,7 @@ export async function fetchStack({ sources, login, now = new Date(), windowDays 
     commits,
     lines,
     languages,
-    perCommit,
     categories,
-    estimate,
     repos: claimed.size,
     privateRepos: privateRead.size,
     capped,

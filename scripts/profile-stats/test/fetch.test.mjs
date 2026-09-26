@@ -78,8 +78,6 @@ function fakeGitHub({ failWith, unreadable = {} } = {}) {
           { node_id: 'R_old', full_name: 'acme/legacy', private: true, pushed_at: '2019-01-01T00:00:00Z' }]
         : []);
     }
-    const langs = u.pathname.match(/^\/repos\/([^/]+\/[^/]+)\/languages$/);
-    if (langs) return json({ 'acme/billing': { Ruby: 9000, JavaScript: 1000 }, 'me/tool': { Python: 500 } }[langs[1]]);
     const list = u.pathname.match(/^\/repos\/([^/]+\/[^/]+)\/commits$/);
     if (list) {
       const blocked = unreadable[list[1]];
@@ -125,24 +123,17 @@ test('fetchStack counts lines per language in the user\'s own commits', async ()
     { label: 'work', repos: 2, privateRepos: 1, skipped: 0, ssoBlocked: 0, commits: 4 },
     { label: 'default', repos: 0, privateRepos: 0, skipped: 0, ssoBlocked: 0, commits: 0 },
   ]);
-  // GitHub's own view for comparison: repo language bytes weighted by my commits.
-  assert.deepEqual(Object.fromEntries(Object.entries(stack.estimate).map(([k, v]) => [k, +v.toFixed(3)])),
-    { Ruby: 3.6, JavaScript: 0.4, Python: 1 });
   // Private repositories and their (non-personal) owners are handed to the leak guard.
   assert.deepEqual(stack.secretNames.sort(), ['acme', 'acme/billing']);
 });
 
-test('commits are also summarised per commit and per kind of repository', async () => {
+test('commits are also summarised per kind of repository', async () => {
   fakeGitHub();
   const stack = await fetchStack({ sources, login: 'me', now: new Date('2026-03-01T00:00:00Z') });
-  // a1: 40 Ruby + 10 ERB lines -> 0.8 / 0.2 of a commit; a3: all Ruby; b1: all Python.
-  assert.deepEqual(stack.perCommit, { Ruby: 1.8, 'HTML+ERB': 0.2, Python: 1 });
   assert.deepEqual(Object.keys(stack.categories).sort(), ['organisation private', 'personal public']);
-  assert.ok(Object.values(stack.perCommit).every(Number.isFinite));
-  assert.deepEqual(stack.categories['organisation private'], {
-    commits: 3, lines: 1050, languages: { Ruby: 1040, 'HTML+ERB': 10 }, perCommit: { Ruby: 1.8, 'HTML+ERB': 0.2 },
-  });
-  assert.equal(stack.categories['personal public'].commits, 1);
+  // a1, a3 and the rename-only a4 are read; merge commit a2 is not.
+  assert.deepEqual(stack.categories['organisation private'], { commits: 3, lines: 1050, languages: { Ruby: 1040, 'HTML+ERB': 10 } });
+  assert.deepEqual(stack.categories['personal public'], { commits: 1, lines: 15, languages: { Python: 15 } });
 });
 
 test('repositories are grouped by owner and visibility', () => {
