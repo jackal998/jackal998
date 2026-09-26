@@ -6,7 +6,6 @@
 // theme gets its own file so the README's <picture> can follow GitHub's mode.
 
 import { readFileSync } from 'node:fs';
-import { CONTRIBUTION_TYPES } from './aggregate.mjs';
 
 const FONTS = new URL('./fonts/', import.meta.url);
 const METRICS = JSON.parse(readFileSync(new URL('metrics.json', FONTS), 'utf8'));
@@ -232,7 +231,7 @@ ${footer.out.join('\n')}
 const TYPE_LABELS = {
   commits: 'COMMITS',
   pullRequests: 'PULL REQUESTS',
-  reviews: 'CODE REVIEWS',
+  reviews: 'PRS REVIEWED',
   issues: 'ISSUES',
   repositories: 'NEW REPOSITORIES',
 };
@@ -267,14 +266,16 @@ function layoutActivity(stats, t) {
     labels: cal.weeks.flatMap((w, index) => (w.month === null ? [] : [{ index, text: MONTHS[w.month] }])),
   });
 
-  // GitHub only itemises public contributions; PRIVATE follows as one line.
-  p.y += 26; p.heading('PUBLIC, BY TYPE', 'QTY');
+  // The same types for public and private work, counted from the repositories;
+  // the totals under them are GitHub's own.
+  const countText = (n) => (n === null ? '-' : formatNumber(n));
+  p.y += 26; p.heading('BY TYPE', 'PRIVATE', 'PUBLIC');
   p.y += 4;
-  for (const key of CONTRIBUTION_TYPES) {
-    p.y += 20; p.item(TYPE_LABELS[key], formatNumber(types.items.find((i) => i.key === key).count));
+  for (const item of types.items) {
+    p.y += 20; p.item(TYPE_LABELS[item.key], countText(item.private), { mid: countText(item.public) });
   }
-  if (types.other) { p.y += 20; p.item('OTHER', formatNumber(types.other)); }
-  p.y += 14; p.dashed();
+  p.y += 18; p.text(LEFT, 'counted from repositories; totals by GitHub', { cls: 'note' });
+  p.y += 12; p.dashed();
   p.y += 22; p.item('PUBLIC', formatNumber(c.public));
   p.y += 20; p.item('PRIVATE', formatNumber(c.private));
   p.y += 12; p.double();
@@ -303,10 +304,10 @@ function layoutActivity(stats, t) {
   const f = new Printer(t);
   if (c.private > 0 && stats.profile.footnote) { f.y = 11; f.center(`* ${stats.profile.footnote.toUpperCase()} *`, 'note'); }
 
-  const typeText = CONTRIBUTION_TYPES.map((key) => `${TYPE_LABELS[key].toLowerCase()} ${formatNumber(types.items.find((i) => i.key === key).count)}`).join(', ');
+  const typeText = types.items.map((item) => `${TYPE_LABELS[item.key].toLowerCase()} ${countText(item.public)} public` +
+    `${item.private === null ? '' : ` and ${countText(item.private)} private`}`).join(', ');
   const desc = `${formatNumber(c.total)} GitHub contributions in the past 12 months ` +
-    `(${formatNumber(c.public)} public, ${formatNumber(c.private)} private). Public ones by type: ${typeText}` +
-    `${types.other ? `, other ${formatNumber(types.other)}` : ''}. ` +
+    `(${formatNumber(c.public)} public, ${formatNumber(c.private)} private). By type, counted from repositories: ${typeText}. ` +
     `Active on ${cal.activeDays} of ${cal.days} days, longest streak ${cal.longestStreak} days` +
     `${cal.busiestWeekday ? `, busiest on ${cal.busiestWeekday.toLowerCase()}s` : ''}. ` +
     `${s.peakHour !== null ? `Most commits between ${pad2(s.peakHour)}:00 and ${pad2((s.peakHour + 1) % 24)}:00 (${zone}). ` : ''}` +
