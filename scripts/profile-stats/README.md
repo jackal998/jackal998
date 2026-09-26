@@ -3,9 +3,11 @@
 A daily GitHub Actions job (`.github/workflows/profile-stats.yml`) prints the
 profile README as a header and two receipts covering the past 12 months:
 
-- **Activity**: GitHub contributions per week and by type, public and private,
-  streaks and busiest days from the contribution calendar, and the hours of
-  day my commits were made (in `PROFILE.timeZone`).
+- **Activity**: GitHub contributions per week, public ones by type (GitHub
+  keeps private contributions one anonymous number, even for the owner's own
+  token), public and private totals, streaks and busiest days from the
+  contribution calendar, and the hours of day my commits were made (in
+  `PROFILE.timeZone`).
 - **Stack**: the languages of the lines I changed in my own commits, lines
   added and removed, and the kind of repository (organisation or mine,
   private or public) they were changed in - never a repository name.
@@ -19,10 +21,9 @@ node scripts/profile-stats/main.mjs --fixture scripts/profile-stats/test/fixture
 
 ## Private repositories
 
-Without extra setup the language breakdown only sees public repositories, and
-private contributions are one anonymous number. To include private
-repositories (personal and company) and itemise private contributions by type,
-add a repository secret named `READ_TOKEN`:
+Without extra setup the language breakdown only sees public repositories. To
+include private ones (personal and company), add a repository secret named
+`READ_TOKEN`:
 
 1. <https://github.com/settings/tokens/new> (Personal access tokens, classic).
 2. Scope: `repo` only. Expiration: as long as the organisation allows.

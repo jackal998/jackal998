@@ -267,15 +267,12 @@ function layoutActivity(stats, t) {
     labels: cal.weeks.flatMap((w, index) => (w.month === null ? [] : [{ index, text: MONTHS[w.month] }])),
   });
 
-  // GitHub may not itemise any private contribution, not even for the owner's
-  // own token; then the types are the public ones and PRIVATE follows as one line.
-  const publicOnly = types.unitemised === c.private;
-  p.y += 26; p.heading(publicOnly ? 'PUBLIC, BY TYPE' : 'BY TYPE', 'QTY');
+  // GitHub only itemises public contributions; PRIVATE follows as one line.
+  p.y += 26; p.heading('PUBLIC, BY TYPE', 'QTY');
   p.y += 4;
   for (const key of CONTRIBUTION_TYPES) {
     p.y += 20; p.item(TYPE_LABELS[key], formatNumber(types.items.find((i) => i.key === key).count));
   }
-  if (types.unitemised && !publicOnly) { p.y += 20; p.item('PRIVATE, NOT ITEMISED', formatNumber(types.unitemised)); }
   if (types.other) { p.y += 20; p.item('OTHER', formatNumber(types.other)); }
   p.y += 14; p.dashed();
   p.y += 22; p.item('PUBLIC', formatNumber(c.public));
@@ -308,8 +305,7 @@ function layoutActivity(stats, t) {
 
   const typeText = CONTRIBUTION_TYPES.map((key) => `${TYPE_LABELS[key].toLowerCase()} ${formatNumber(types.items.find((i) => i.key === key).count)}`).join(', ');
   const desc = `${formatNumber(c.total)} GitHub contributions in the past 12 months ` +
-    `(${formatNumber(c.public)} public, ${formatNumber(c.private)} private). ${publicOnly ? 'Public ones by type' : 'By type'}: ${typeText}` +
-    `${types.unitemised && !publicOnly ? `, private not itemised ${formatNumber(types.unitemised)}` : ''}` +
+    `(${formatNumber(c.public)} public, ${formatNumber(c.private)} private). Public ones by type: ${typeText}` +
     `${types.other ? `, other ${formatNumber(types.other)}` : ''}. ` +
     `Active on ${cal.activeDays} of ${cal.days} days, longest streak ${cal.longestStreak} days` +
     `${cal.busiestWeekday ? `, busiest on ${cal.busiestWeekday.toLowerCase()}s` : ''}. ` +

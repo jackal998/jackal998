@@ -64,18 +64,15 @@ test('one huge file change is capped, added and removed alike', () => {
   assert.deepEqual(splitChanged({ additions: 3000, deletions: 1000 }), { added: 750, removed: 250 });
 });
 
-test('contributions by type always add up to the total', () => {
-  // Default token: types are public only, the private ones are not itemised.
-  const pub = summarizeTypes(raw.activity);
-  assert.equal(pub.unitemised, 1502);
-  assert.equal(pub.other, 0);
-  // Read token: private ones itemised too; a gap in GitHub's totals becomes "other".
-  const read = summarizeTypes({ ...raw.itemised, calendarTotal: raw.itemised.calendarTotal + 5 });
-  assert.deepEqual(read.items.map((i) => i.count), [1500, 220, 110, 14, 8]);
-  assert.equal(read.unitemised, 12);
-  assert.equal(read.other, 5);
-  assert.equal(read.excess, 0);
-  assert.equal(summarizeTypes({ ...raw.itemised, calendarTotal: 1800 }).excess, 64);
+test('public contributions by type always add up to the public total', () => {
+  const types = summarizeTypes(raw.activity);
+  assert.deepEqual(types.items.map((i) => i.count), [250, 60, 40, 8, 4]);
+  assert.equal(types.other, 0);
+  // A gap in GitHub's separately computed totals becomes "other".
+  const drift = summarizeTypes({ ...raw.activity, calendarTotal: raw.activity.calendarTotal + 5 });
+  assert.equal(drift.other, 5);
+  assert.equal(drift.excess, 0);
+  assert.equal(summarizeTypes({ ...raw.activity, calendarTotal: 1800 }).excess, 64);
 });
 
 test('calendar weeks, streaks and the busiest days', () => {
@@ -145,9 +142,8 @@ test('receipts print the numbers, escape names and never print NaN', () => {
       assert.equal(heightOf(activity), heightOf(stack));
       assert.match(activity, />1,864</);
       assert.match(activity, />NO\. 001864</);
+      assert.match(activity, />PUBLIC, BY TYPE</);
       assert.match(activity, />PULL REQUESTS</);
-      assert.match(activity, />BY TYPE</);
-      assert.match(activity, />PRIVATE, NOT ITEMISED</);
       assert.match(activity, />GMT\+8</);
       assert.match(activity, />15:00-16:00</);
       assert.match(activity, />\* PRIVATE INCLUDES COMPANY WORK \*</);
@@ -156,10 +152,6 @@ test('receipts print the numbers, escape names and never print NaN', () => {
       assert.match(header, />Octo Cat</);
     }
   }
-  // Nothing private itemised: the types are the public ones, and private is not repeated.
-  const publicTypes = renderReceipts(buildStats({ ...raw, itemised: undefined }), 'light').activity;
-  assert.match(publicTypes, />PUBLIC, BY TYPE</);
-  assert.doesNotMatch(publicTypes, /NOT ITEMISED/);
   const stats = buildStats(raw);
   assert.match(renderReceipts(stats, 'light').stack, />public \+ private repositories</);
   assert.match(renderReceipts(stats, 'light').stack, />\+140,000</);
@@ -171,9 +163,7 @@ test('receipts without any code changes or activity say so', () => {
   Object.assign(empty.stack, { languages: {}, lines: 0, added: 0, removed: 0, commits: 0, privateRepos: 0, categories: {}, hours: Array(24).fill(0) });
   Object.assign(empty.activity, { calendarTotal: 0, restricted: 0, days: empty.activity.days.map((d) => ({ ...d, count: 0 })) });
   empty.activity.byType = { commits: 0, pullRequests: 0, reviews: 0, issues: 0, repositories: 0 };
-  delete empty.itemised;
   const { activity, stack } = renderReceipts(buildStats(empty), 'light');
-  assert.match(activity, />PUBLIC, BY TYPE</);
   assert.match(stack, /NO CODE CHANGES FOUND/);
   assert.match(stack, />public repositories only</);
   assert.doesNotMatch(stack, />SOURCE</);

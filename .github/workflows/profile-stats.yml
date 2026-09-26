@@ -11,7 +11,7 @@ on:
 
 # The job's own GITHUB_TOKEN reads public data and commits the receipts back.
 # The optional READ_TOKEN secret adds private repositories to the language
-# breakdown and itemises private contributions. It is handed to the one step that needs it, the script only ever
+# breakdown. It is handed to the one step that needs it, the script only ever
 # reads with it, and only aggregated numbers are logged or committed.
 permissions:
   contents: write

@@ -163,16 +163,5 @@
         }
       }
     }
-  },
-  "itemised": {
-    "calendarTotal": 1864,
-    "restricted": 12,
-    "byType": {
-      "commits": 1500,
-      "pullRequests": 220,
-      "reviews": 110,
-      "issues": 14,
-      "repositories": 8
-    }
   }
 }

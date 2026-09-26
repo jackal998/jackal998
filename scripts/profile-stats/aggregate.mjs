@@ -17,19 +17,17 @@ export function summarizeContributions(activity) {
 
 export const CONTRIBUTION_TYPES = ['commits', 'pullRequests', 'reviews', 'issues', 'repositories'];
 
-// Contributions by type. A token only itemises what it can see; the rest is
-// GitHub's anonymous private count. Anything left over from the calendar total
-// (GitHub's totals are computed separately and can drift by a few) is "other",
-// so the rows always add up to the total printed below them.
+// Public contributions by type; the private ones stay one anonymous number.
+// Anything the types leave over (GitHub computes its totals separately, so
+// they can drift by a few) is "other", so the rows add up to the public total.
 export function summarizeTypes(activity) {
   const items = CONTRIBUTION_TYPES.map((key) => ({ key, count: activity.byType[key] ?? 0 }));
   const itemised = items.reduce((acc, item) => acc + item.count, 0);
-  const rest = activity.calendarTotal - itemised - activity.restricted;
+  const rest = activity.calendarTotal - activity.restricted - itemised;
   return {
     items,
-    unitemised: activity.restricted,
     other: Math.max(rest, 0),
-    // Itemised more than the calendar total: the rows cannot add up.
+    // Itemised more than the public total: the rows cannot add up.
     excess: Math.max(-rest, 0),
   };
 }
@@ -138,15 +136,13 @@ export function summarizeStack(stack, { top = 6 } = {}) {
   };
 }
 
-// raw.itemised, when present, is the same activity read with the read token,
-// which can itemise private contributions by type.
 export function buildStats(raw) {
   return {
     profile: raw.profile,
     login: raw.login,
     generatedAt: raw.generatedAt,
     contributions: summarizeContributions(raw.activity),
-    types: summarizeTypes(raw.itemised ?? raw.activity),
+    types: summarizeTypes(raw.activity),
     calendar: summarizeCalendar(raw.activity.days),
     stack: summarizeStack(raw.stack),
   };

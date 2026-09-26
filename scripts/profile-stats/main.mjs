@@ -5,8 +5,7 @@
 //
 // An optional READ_TOKEN (a classic token with the `repo` scope, authorised
 // for the employer's SSO) adds private repositories - personal and company -
-// to the language breakdown, and itemises private contributions by type. The
-// code only ever reads with it.
+// to the language breakdown. The code only ever reads with it.
 //
 // Everything is rendered and checked before any file is written, so a failed
 // API call, a sanity check or the leak guard leaves the previous receipts in
@@ -51,18 +50,10 @@ async function loadRaw() {
   if (!process.env.GITHUB_TOKEN) throw new Error('GITHUB_TOKEN is not set');
   if (!args.login) throw new Error('Pass --login or set PROFILE_LOGIN');
   const now = new Date();
-  // The public/private split and the calendar come from the default token,
-  // which sees every private contribution as anonymous; the read token can
-  // itemise the private ones by type.
   const activity = await fetchActivity({ token: process.env.GITHUB_TOKEN, login: args.login });
-  let itemised;
-  if (process.env.READ_TOKEN) {
-    const own = await fetchActivity({ token: process.env.READ_TOKEN, login: args.login, sensitive: true, asViewer: true });
-    if (own) itemised = { calendarTotal: own.calendarTotal, restricted: own.restricted, byType: own.byType };
-  }
   const stack = await fetchStack({ sources: stackSources(), login: args.login, now, timeZone: PROFILE.timeZone });
   const readTokenScopes = process.env.READ_TOKEN ? await tokenScopes(process.env.READ_TOKEN) : undefined;
-  return { profile: PROFILE, login: args.login, generatedAt: now.toISOString(), activity, itemised, stack, readTokenScopes };
+  return { profile: PROFILE, login: args.login, generatedAt: now.toISOString(), activity, stack, readTokenScopes };
 }
 
 // Aggregates only: Actions logs of a public repository are public.
@@ -75,9 +66,8 @@ function summaryLines(raw, stats) {
     log('Note: no private contributions reported. Enable "Private contributions" in the profile\'s contribution settings to include them.');
   }
   const types = stats.types;
-  log(`By type (${raw.itemised ? 'read token' : 'default token'}): ${types.items.map((i) => `${i.key} ${formatNumber(i.count)}`).join(', ')}; ` +
-    `not itemised ${formatNumber(types.unitemised)}, other ${formatNumber(types.other)}` +
-    (types.excess ? `; itemised ${formatNumber(types.excess)} more than the calendar total` : ''));
+  log(`Public by type: ${types.items.map((i) => `${i.key} ${formatNumber(i.count)}`).join(', ')}; other ${formatNumber(types.other)}` +
+    (types.excess ? `; itemised ${formatNumber(types.excess)} more than the public total` : ''));
   const cal = stats.calendar;
   log(`Calendar: ${cal.weeks.length} weeks, active on ${cal.activeDays} of ${cal.days} days, ` +
     `longest streak ${cal.longestStreak}, current streak ${cal.currentStreak}, busiest weekday ${cal.busiestWeekday ?? '-'}`);

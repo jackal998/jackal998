@@ -3,8 +3,8 @@
 // Activity totals use the workflow's own GITHUB_TOKEN, which only sees public
 // data; private contributions still arrive as GitHub's anonymous
 // `restrictedContributionsCount` when "Private contributions" is enabled, and
-// are included in the daily counts of the contribution calendar. A read token,
-// when there is one, itemises the private contributions by type.
+// are included in the daily counts of the contribution calendar. (GitHub does
+// not itemise them by type, not even for the owner's own `repo` token.)
 //
 // The language breakdown looks at the files changed in each of the user's
 // commits. Optional read-only tokens let it include private repositories.
@@ -94,35 +94,31 @@ export async function tokenScopes(token) {
 
 // Without from/to, contributionsCollection covers the past year: the same
 // window as the contribution graph on the profile.
-const ACTIVITY_FIELDS = `
-  contributionsCollection {
-    contributionCalendar {
-      totalContributions
-      weeks { contributionDays { date contributionCount } }
+const ACTIVITY_QUERY = `
+  query ($login: String!) {
+    user(login: $login) {
+      contributionsCollection {
+        contributionCalendar {
+          totalContributions
+          weeks { contributionDays { date contributionCount } }
+        }
+        restrictedContributionsCount
+        totalCommitContributions
+        totalPullRequestContributions
+        totalPullRequestReviewContributions
+        totalIssueContributions
+        totalRepositoryContributions
+      }
     }
-    restrictedContributionsCount
-    totalCommitContributions
-    totalPullRequestContributions
-    totalPullRequestReviewContributions
-    totalIssueContributions
-    totalRepositoryContributions
   }
 `;
-const ACTIVITY_QUERY = `query ($login: String!) { user(login: $login) { ${ACTIVITY_FIELDS} } }`;
-// A read token reads its owner's own contributions as the viewer.
-const VIEWER_ACTIVITY_QUERY = `query { viewer { login ${ACTIVITY_FIELDS} } }`;
 
-// The per-type totals only count what the token can see; everything else is
-// in `restricted`. With `asViewer`, returns null when the token belongs to
-// someone other than `login`.
-export async function fetchActivity({ token, login, sensitive = false, asViewer = false }) {
-  const data = asViewer
-    ? await graphql(token, VIEWER_ACTIVITY_QUERY, {}, { sensitive })
-    : await graphql(token, ACTIVITY_QUERY, { login }, { sensitive });
-  const user = asViewer ? data.viewer : data.user;
-  if (!user) throw new Error(`GitHub user "${login}" not found`);
-  if (asViewer && user.login.toLowerCase() !== login.toLowerCase()) return null;
-  const c = user.contributionsCollection;
+// The per-type totals only count public contributions; the private ones are
+// all in `restricted`.
+export async function fetchActivity({ token, login }) {
+  const data = await graphql(token, ACTIVITY_QUERY, { login });
+  if (!data.user) throw new Error(`GitHub user "${login}" not found`);
+  const c = data.user.contributionsCollection;
   return {
     calendarTotal: c.contributionCalendar.totalContributions,
     restricted: c.restrictedContributionsCount,
