@@ -10,11 +10,11 @@
 ## GitHub Stats
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="profile/contributions-dark.svg">
-  <img alt="Contribution totals and contributions per year, including private work" src="profile/contributions-light.svg" width="100%">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jackal998/jackal998/master/profile/contributions-dark.svg">
+  <img alt="Contribution totals and contributions per year, including private work" src="https://raw.githubusercontent.com/jackal998/jackal998/master/profile/contributions-light.svg" width="100%">
 </picture>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="profile/languages-dark.svg">
-  <img alt="Share of code by language across my public repositories" src="profile/languages-light.svg" width="100%">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jackal998/jackal998/master/profile/languages-dark.svg">
+  <img alt="Share of code by language across my public repositories" src="https://raw.githubusercontent.com/jackal998/jackal998/master/profile/languages-light.svg" width="100%">
 </picture>
