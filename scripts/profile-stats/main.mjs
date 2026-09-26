@@ -76,6 +76,21 @@ function summaryLines(raw, stats) {
   for (const item of [...s.items, ...(s.other ? [s.other] : [])]) {
     log(`  ${item.name}: ${formatShare(item.share)} (${formatNumber(item.lines)} lines)`);
   }
+  const top = (weights) => {
+    const r = rankLanguages(weights, { top: 4 });
+    return [...r.items, ...(r.other ? [r.other] : [])].map((i) => `${i.name} ${formatShare(i.share)}`).join(', ') || '-';
+  };
+  if (raw.stack.perCommit && Object.keys(raw.stack.perCommit).length) {
+    log(`Same commits, each commit counted once: ${top(raw.stack.perCommit)}`);
+  }
+  if (raw.stack.categories) {
+    log('Breakdown by where the commits were made:');
+    for (const [name, c] of Object.entries(raw.stack.categories).sort((x, y) => y[1].commits - x[1].commits)) {
+      log(`  ${name}: ${formatNumber(c.commits)} commits, ${formatNumber(c.lines)} lines`);
+      log(`    by lines:   ${top(c.languages)}`);
+      log(`    by commits: ${top(c.perCommit)}`);
+    }
+  }
   if (raw.stack.estimate && Object.keys(raw.stack.estimate).length) {
     const e = rankLanguages(raw.stack.estimate);
     log('For comparison, repository languages weighted by my commits (GitHub contribution data):');

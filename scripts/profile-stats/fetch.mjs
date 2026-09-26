@@ -217,6 +217,15 @@ async function commitsIn(source, repo, login, from, to) {
   return commits;
 }
 
+// Where a commit was made, for the aggregated breakdown in the logs.
+export function categoryOf(repo, login) {
+  const owner = repo.nameWithOwner.split('/')[0].toLowerCase();
+  if (owner === login.toLowerCase()) return repo.isPrivate ? 'personal private' : 'personal public';
+  return repo.isPrivate ? 'organisation private' : 'public, other owners';
+}
+
+const addTo = (bag, key, n) => { bag[key] = (bag[key] ?? 0) + n; };
+
 /**
  * sources: [{ token, label, listAll, sensitive, maxCommits }], most capable first.
  * A repository is read with the first source that can see it.
@@ -243,6 +252,10 @@ export async function fetchStack({ sources, login, now = new Date(), windowDays 
   let capped = false;
   const log = [];
   const privateRead = new Set(); // private repositories whose commits were actually read
+  // Each commit counts once, split across the languages of the lines it changed,
+  // so a handful of huge commits cannot dominate the mix.
+  const perCommit = {};
+  const categories = {};
 
   for (const { source, repos } of perSource) {
     let listed = [];
@@ -275,13 +288,25 @@ export async function fetchStack({ sources, login, now = new Date(), windowDays 
       if (!detail) return;
       if ((detail.parents?.length ?? 0) > 1) return; // merge commits repeat work already counted
       analyzed++;
+      const category = (categories[categoryOf(c.repo, login)] ??= { commits: 0, lines: 0, languages: {}, perCommit: {} });
+      category.commits++;
+      const mine = {};
+      let commitLines = 0;
       for (const file of detail.files ?? []) {
         const language = languageOf(file.filename);
         if (!language) continue;
         const n = linesChanged(file);
-        languages[language] = (languages[language] ?? 0) + n;
-        lines += n;
+        addTo(mine, language, n);
+        commitLines += n;
       }
+      for (const [language, n] of Object.entries(mine)) {
+        addTo(languages, language, n);
+        addTo(category.languages, language, n);
+        addTo(perCommit, language, n / commitLines);
+        addTo(category.perCommit, language, n / commitLines);
+      }
+      lines += commitLines;
+      category.lines += commitLines;
     });
     commits += analyzed;
     log.push({
@@ -310,6 +335,8 @@ export async function fetchStack({ sources, login, now = new Date(), windowDays 
     commits,
     lines,
     languages,
+    perCommit,
+    categories,
     estimate,
     repos: claimed.size,
     privateRepos: privateRead.size,

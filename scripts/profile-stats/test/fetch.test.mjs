@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
-import { fetchActivity, fetchStack, graphql } from '../fetch.mjs';
+import { categoryOf, fetchActivity, fetchStack, graphql } from '../fetch.mjs';
 
 const realFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = realFetch; });
@@ -129,6 +129,25 @@ test('fetchStack counts lines per language in the user\'s own commits', async ()
     { Ruby: 2.7, JavaScript: 0.3, Python: 1 });
   // Private repositories and their (non-personal) owners are handed to the leak guard.
   assert.deepEqual(stack.secretNames.sort(), ['acme', 'acme/billing']);
+});
+
+test('commits are also summarised per commit and per kind of repository', async () => {
+  fakeGitHub();
+  const stack = await fetchStack({ sources, login: 'me', now: new Date('2026-03-01T00:00:00Z') });
+  // a1: 40 Ruby + 10 ERB lines -> 0.8 / 0.2 of a commit; a3: all Ruby; b1: all Python.
+  assert.deepEqual(stack.perCommit, { Ruby: 1.8, 'HTML+ERB': 0.2, Python: 1 });
+  assert.deepEqual(Object.keys(stack.categories).sort(), ['organisation private', 'personal public']);
+  assert.deepEqual(stack.categories['organisation private'], {
+    commits: 2, lines: 1050, languages: { Ruby: 1040, 'HTML+ERB': 10 }, perCommit: { Ruby: 1.8, 'HTML+ERB': 0.2 },
+  });
+  assert.equal(stack.categories['personal public'].commits, 1);
+});
+
+test('repositories are grouped by owner and visibility', () => {
+  assert.equal(categoryOf({ nameWithOwner: 'Me/tool', isPrivate: true }, 'me'), 'personal private');
+  assert.equal(categoryOf({ nameWithOwner: 'me/tool', isPrivate: false }, 'me'), 'personal public');
+  assert.equal(categoryOf({ nameWithOwner: 'acme/billing', isPrivate: true }, 'me'), 'organisation private');
+  assert.equal(categoryOf({ nameWithOwner: 'rails/rails', isPrivate: false }, 'me'), 'public, other owners');
 });
 
 test('the client refuses to write, whatever the token could do', async () => {
