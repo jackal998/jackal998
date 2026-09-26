@@ -1,0 +1,48 @@
+name: Profile stats
+
+on:
+  schedule:
+    - cron: "17 18 * * *" # daily, 02:17 Asia/Taipei
+  workflow_dispatch:
+  push:
+    paths:
+      - "scripts/profile-stats/**"
+      - ".github/workflows/profile-stats.yml"
+
+# The job's own GITHUB_TOKEN is enough: it only needs public data plus
+# permission to commit the regenerated cards back to this repository.
+permissions:
+  contents: write
+
+concurrency:
+  group: profile-stats-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Test
+        run: node --test scripts/profile-stats/test/*.test.mjs
+
+      - name: Generate cards
+        run: node scripts/profile-stats/main.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PROFILE_LOGIN: ${{ github.repository_owner }}
+
+      - name: Commit changed cards
+        run: |
+          git add profile/
+          if git diff --cached --quiet; then
+            echo "Cards unchanged."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: update profile stats cards"
+          git pull --rebase origin "$GITHUB_REF_NAME"
+          git push origin "HEAD:$GITHUB_REF_NAME"
