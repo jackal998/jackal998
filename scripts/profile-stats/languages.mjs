@@ -51,6 +51,16 @@ export function languageOf(path) {
 // outweigh months of ordinary work, so each file counts at most this much per commit.
 export const MAX_LINES_PER_FILE = 1000;
 
+// Lines added and removed in one file, scaled down together past the cap.
+export function splitChanged(file) {
+  const added = file.additions ?? 0;
+  const removed = file.deletions ?? 0;
+  if (added + removed <= MAX_LINES_PER_FILE) return { added, removed };
+  const cappedAdded = Math.round((added / (added + removed)) * MAX_LINES_PER_FILE);
+  return { added: cappedAdded, removed: MAX_LINES_PER_FILE - cappedAdded };
+}
+
 export function linesChanged(file) {
-  return Math.min((file.additions ?? 0) + (file.deletions ?? 0), MAX_LINES_PER_FILE);
+  const { added, removed } = splitChanged(file);
+  return added + removed;
 }

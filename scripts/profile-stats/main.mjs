@@ -1,4 +1,4 @@
-// Regenerates the profile README receipt in profile/.
+// Regenerates the profile README header and receipts in profile/.
 //
 //   GITHUB_TOKEN=... node scripts/profile-stats/main.mjs --login jackal998
 //   node scripts/profile-stats/main.mjs --fixture scripts/profile-stats/test/fixture.json --out /tmp/receipt
@@ -8,7 +8,7 @@
 // to the language breakdown. The code only ever reads with it.
 //
 // Everything is rendered and checked before any file is written, so a failed
-// API call, a sanity check or the leak guard leaves the previous receipt in
+// API call, a sanity check or the leak guard leaves the previous receipts in
 // place instead of breaking or exposing anything.
 
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -17,9 +17,14 @@ import { parseArgs } from 'node:util';
 import { buildStats, rankLanguages } from './aggregate.mjs';
 import { fetchActivity, fetchStack, tokenScopes } from './fetch.mjs';
 import { assertNoLeak } from './guard.mjs';
-import { formatNumber, formatShare, renderReceipt } from './render.mjs';
+import { formatNumber, formatShare, renderHeader, renderReceipts } from './render.mjs';
 
-const PROFILE = { name: 'E.J. Lin', role: 'Back End Developer' };
+const PROFILE = {
+  name: 'E.J. Lin',
+  role: 'Back End Developer',
+  footnote: 'Private includes company work',
+  timeZone: 'Asia/Taipei', // commit hours are counted in this zone
+};
 
 const { values: args } = parseArgs({
   options: {
@@ -46,7 +51,7 @@ async function loadRaw() {
   if (!args.login) throw new Error('Pass --login or set PROFILE_LOGIN');
   const now = new Date();
   const activity = await fetchActivity({ token: process.env.GITHUB_TOKEN, login: args.login });
-  const stack = await fetchStack({ sources: stackSources(), login: args.login, now });
+  const stack = await fetchStack({ sources: stackSources(), login: args.login, now, timeZone: PROFILE.timeZone });
   const readTokenScopes = process.env.READ_TOKEN ? await tokenScopes(process.env.READ_TOKEN) : undefined;
   return { profile: PROFILE, login: args.login, generatedAt: now.toISOString(), activity, stack, readTokenScopes };
 }
@@ -60,6 +65,12 @@ function summaryLines(raw, stats) {
   if (c.private === 0) {
     log('Note: no private contributions reported. Enable "Private contributions" in the profile\'s contribution settings to include them.');
   }
+  const types = stats.types;
+  log(`Public by type: ${types.items.map((i) => `${i.key} ${formatNumber(i.count)}`).join(', ')}; other ${formatNumber(types.other)}` +
+    (types.excess ? `; itemised ${formatNumber(types.excess)} more than the public total` : ''));
+  const cal = stats.calendar;
+  log(`Calendar: ${cal.weeks.length} weeks, active on ${cal.activeDays} of ${cal.days} days, ` +
+    `longest streak ${cal.longestStreak}, current streak ${cal.currentStreak}, busiest weekday ${cal.busiestWeekday ?? '-'}`);
   if (raw.readTokenScopes !== undefined) {
     log(`READ_TOKEN scopes: ${raw.readTokenScopes === null ? '(not a classic token)' : raw.readTokenScopes || '(none)'}`);
   }
@@ -71,7 +82,9 @@ function summaryLines(raw, stats) {
     log('READ_TOKEN read no private repositories: it needs the `repo` scope, and SSO authorisation for organisation repositories.');
   }
   const s = stats.stack;
-  log(`Stack: ${formatNumber(s.commits)} commits, ${formatNumber(s.lines)} lines changed${s.capped ? ' (capped to the most recent commits)' : ''}`);
+  log(`Stack: ${formatNumber(s.commits)} commits in ${formatNumber(s.repos)} repositories, ${formatNumber(s.lines)} lines changed ` +
+    `(+${formatNumber(s.added)} -${formatNumber(s.removed)})${s.capped ? ' (capped to the most recent commits)' : ''}`);
+  log(`Commit hours (${s.timeZone}): ${s.hours.join(' ')}`);
   for (const item of [...s.items, ...(s.other ? [s.other] : [])]) {
     log(`  ${item.name}: ${formatShare(item.share)} (${formatNumber(item.lines)} lines)`);
   }
@@ -96,10 +109,13 @@ const summary = summaryLines(raw, stats).join('\n');
 assertNoLeak('the log summary', summary, secretNames);
 console.log(summary);
 
-const files = {
-  'receipt-light.svg': renderReceipt(stats, 'light'),
-  'receipt-dark.svg': renderReceipt(stats, 'dark'),
-};
+const files = {};
+for (const theme of ['light', 'dark']) {
+  const receipts = renderReceipts(stats, theme);
+  files[`header-${theme}.svg`] = renderHeader(stats, theme);
+  files[`activity-${theme}.svg`] = receipts.activity;
+  files[`stack-${theme}.svg`] = receipts.stack;
+}
 for (const [name, svg] of Object.entries(files)) assertNoLeak(name, svg, secretNames);
 
 await mkdir(args.out, { recursive: true });
