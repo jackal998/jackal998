@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="840" height="248" viewBox="0 0 840 248" role="img" aria-labelledby="title desc">
+<title id="title">jackal998&apos;s GitHub contributions</title>
+<desc id="desc">6,175 contributions since 2016: 1,894 public and 4,281 private. Past year: 3,509. Per year - 2016: 5 (5 public, 0 private); 2017: 2 (1 public, 1 private); 2018: 0 (0 public, 0 private); 2019: 0 (0 public, 0 private); 2020: 0 (0 public, 0 private); 2021: 116 (116 public, 0 private); 2022: 660 (124 public, 536 private); 2023: 828 (145 public, 683 private); 2024: 547 (27 public, 520 private); 2025: 676 (117 public, 559 private); 2026: 3,341 (1,359 public, 1,982 private). Updated 2026-09-26.</desc>
+<style>
+text { font-family: system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; fill: #ffffff; }
+.title { font-size: 16px; font-weight: 600; }
+.hero { font-size: 48px; font-weight: 600; }
+.value { font-size: 22px; font-weight: 600; }
+.label { font-size: 13px; fill: #c3c2b7; }
+.small { font-size: 12px; fill: #c3c2b7; }
+.tick { font-size: 11px; fill: #898781; font-variant-numeric: tabular-nums; }
+.note { font-size: 11px; fill: #898781; }
+.halo { paint-order: stroke; stroke: #1a1a19; stroke-width: 4px; stroke-linejoin: round; }
+</style>
+<rect x="0.5" y="0.5" width="839" height="247" rx="8" fill="#1a1a19" stroke="rgba(255,255,255,0.10)"/>
+<text x="24" y="40" class="title">Contributions</text>
+<text x="768.96" y="40" class="small">Private</text>
+<rect x="752.96" y="31" width="10" height="10" rx="2" fill="#d95926"/>
+<text x="696.64" y="40" class="small">Public</text>
+<rect x="680.64" y="31" width="10" height="10" rx="2" fill="#3987e5"/>
+<text x="24" y="108" class="hero">6,175</text>
+<text x="24" y="132" class="label">All-time contributions since 2016</text>
+<text x="24" y="172" class="label">Past year</text>
+<text x="24" y="198" class="value">3,509</text>
+<text x="128" y="172" class="label">Public</text>
+<text x="128" y="198" class="value">1,894</text>
+<text x="232" y="172" class="label">Private</text>
+<text x="232" y="198" class="value">4,281</text>
+<text x="24" y="232" class="note">Private: contributions to private repositories, including company work · Updated 2026-09-26</text>
+<line x1="400" y1="196" x2="816" y2="196" stroke="#383835" stroke-width="1"/>
+<text x="392" y="200" class="tick" text-anchor="end">0</text>
+<line x1="400" y1="165" x2="816" y2="165" stroke="#2c2c2a" stroke-width="1"/>
+<text x="392" y="169" class="tick" text-anchor="end">1,000</text>
+<line x1="400" y1="134" x2="816" y2="134" stroke="#2c2c2a" stroke-width="1"/>
+<text x="392" y="138" class="tick" text-anchor="end">2,000</text>
+<line x1="400" y1="103" x2="816" y2="103" stroke="#2c2c2a" stroke-width="1"/>
+<text x="392" y="107" class="tick" text-anchor="end">3,000</text>
+<line x1="400" y1="72" x2="816" y2="72" stroke="#2c2c2a" stroke-width="1"/>
+<text x="392" y="76" class="tick" text-anchor="end">4,000</text>
+<path d="M407.56,196V196A0.16,0.16 0 0 1 407.72,195.85H430.1A0.16,0.16 0 0 1 430.25,196V196Z" fill="#3987e5"/>
+<text x="418.91" y="214" class="tick" text-anchor="middle">2016</text>
+<rect x="445.38" y="195.97" width="22.69" height="0.03" fill="#3987e5"/>
+<path d="M445.38,193.97V193.97A1,1 0 0 1 446.38,192.97H467.07A1,1 0 0 1 468.07,193.97V193.97Z" fill="#d95926"/>
+<text x="456.73" y="214" class="tick" text-anchor="middle">2017</text>
+<text x="494.55" y="214" class="tick" text-anchor="middle">2018</text>
+<text x="532.36" y="214" class="tick" text-anchor="middle">2019</text>
+<text x="570.18" y="214" class="tick" text-anchor="middle">2020</text>
+<path d="M596.65,196V196A3.6,3.6 0 0 1 600.25,192.4H615.75A3.6,3.6 0 0 1 619.35,196V196Z" fill="#3987e5"/>
+<text x="608" y="214" class="tick" text-anchor="middle">2021</text>
+<rect x="634.47" y="192.16" width="22.69" height="3.84" fill="#3987e5"/>
+<path d="M634.47,190.16V179.54A4,4 0 0 1 638.47,175.54H653.16A4,4 0 0 1 657.16,179.54V190.16Z" fill="#d95926"/>
+<text x="645.82" y="214" class="tick" text-anchor="middle">2022</text>
+<rect x="672.29" y="191.51" width="22.69" height="4.5" fill="#3987e5"/>
+<path d="M672.29,189.51V174.33A4,4 0 0 1 676.29,170.33H690.98A4,4 0 0 1 694.98,174.33V189.51Z" fill="#d95926"/>
+<text x="683.64" y="214" class="tick" text-anchor="middle">2023</text>
+<rect x="710.11" y="195.16" width="22.69" height="0.84" fill="#3987e5"/>
+<path d="M710.11,193.16V183.04A4,4 0 0 1 714.11,179.04H728.8A4,4 0 0 1 732.8,183.04V193.16Z" fill="#d95926"/>
+<text x="721.45" y="214" class="tick" text-anchor="middle">2024</text>
+<rect x="747.93" y="192.37" width="22.69" height="3.63" fill="#3987e5"/>
+<path d="M747.93,190.37V179.04A4,4 0 0 1 751.93,175.04H766.62A4,4 0 0 1 770.62,179.04V190.37Z" fill="#d95926"/>
+<text x="759.27" y="214" class="tick" text-anchor="middle">2025</text>
+<rect x="785.75" y="153.87" width="22.69" height="42.13" fill="#3987e5"/>
+<path d="M785.75,151.87V96.43A4,4 0 0 1 789.75,92.43H804.44A4,4 0 0 1 808.44,96.43V151.87Z" fill="#d95926"/>
+<text x="797.09" y="214" class="tick" text-anchor="middle">2026</text>
+<text x="797.09" y="86.43" class="small halo" text-anchor="middle">3,341</text>
+</svg>

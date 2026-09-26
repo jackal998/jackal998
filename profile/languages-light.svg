@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="840" height="268" viewBox="0 0 840 268" role="img" aria-labelledby="title desc">
+<title id="title">Languages in jackal998&apos;s public repositories</title>
+<desc id="desc">Share of code by size: Python 58.7%, TypeScript 22.7%, Ruby 7.7%, C 6.1%, HTML 2.9%, SCSS 0.7%, Other 1.2%.</desc>
+<style>
+text { font-family: system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; fill: #0b0b0b; }
+.title { font-size: 16px; font-weight: 600; }
+.hero { font-size: 48px; font-weight: 600; }
+.value { font-size: 22px; font-weight: 600; }
+.label { font-size: 13px; fill: #52514e; }
+.small { font-size: 12px; fill: #52514e; }
+.tick { font-size: 11px; fill: #898781; font-variant-numeric: tabular-nums; }
+.note { font-size: 11px; fill: #898781; }
+.halo { paint-order: stroke; stroke: #fcfcfb; stroke-width: 4px; stroke-linejoin: round; }
+</style>
+<rect x="0.5" y="0.5" width="839" height="267" rx="8" fill="#fcfcfb" stroke="rgba(11,11,11,0.10)"/>
+<text x="24" y="40" class="title">Languages</text>
+<text x="816" y="40" class="small" text-anchor="end">Share of code in my public repositories</text>
+<text x="24" y="78.5" class="label" style="fill:#0b0b0b">Python</text>
+<path d="M168,68H756A4,4 0 0 1 760,72V76A4,4 0 0 1 756,80H168Z" fill="#2a78d6"/>
+<text x="768" y="78" class="small">58.7%</text>
+<text x="24" y="106.5" class="label" style="fill:#0b0b0b">TypeScript</text>
+<path d="M168,96H392.78A4,4 0 0 1 396.78,100V104A4,4 0 0 1 392.78,108H168Z" fill="#2a78d6"/>
+<text x="404.78" y="106" class="small">22.7%</text>
+<text x="24" y="134.5" class="label" style="fill:#0b0b0b">Ruby</text>
+<path d="M168,124H241.47A4,4 0 0 1 245.47,128V132A4,4 0 0 1 241.47,136H168Z" fill="#2a78d6"/>
+<text x="253.47" y="134" class="small">7.7%</text>
+<text x="24" y="162.5" class="label" style="fill:#0b0b0b">C</text>
+<path d="M168,152H225.17A4,4 0 0 1 229.17,156V160A4,4 0 0 1 225.17,164H168Z" fill="#2a78d6"/>
+<text x="237.17" y="162" class="small">6.1%</text>
+<text x="24" y="190.5" class="label" style="fill:#0b0b0b">HTML</text>
+<path d="M168,180H193.33A4,4 0 0 1 197.33,184V188A4,4 0 0 1 193.33,192H168Z" fill="#2a78d6"/>
+<text x="205.33" y="190" class="small">2.9%</text>
+<text x="24" y="218.5" class="label" style="fill:#0b0b0b">SCSS</text>
+<path d="M168,208H171.22A4,4 0 0 1 175.22,212V216A4,4 0 0 1 171.22,220H168Z" fill="#2a78d6"/>
+<text x="183.22" y="218" class="small">0.7%</text>
+<text x="24" y="246.5" class="label" style="fill:#0b0b0b">Other</text>
+<path d="M168,236H176.16A4,4 0 0 1 180.16,240V244A4,4 0 0 1 176.16,248H168Z" fill="#898781"/>
+<text x="188.16" y="246" class="small">1.2%</text>
+</svg>
