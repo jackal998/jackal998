@@ -57,8 +57,8 @@ async function loadRaw() {
   const activity = await fetchActivity({ token: process.env.GITHUB_TOKEN, login: args.login });
   let itemised;
   if (process.env.READ_TOKEN) {
-    const { calendarTotal, restricted, byType } = await fetchActivity({ token: process.env.READ_TOKEN, login: args.login, sensitive: true });
-    itemised = { calendarTotal, restricted, byType };
+    const own = await fetchActivity({ token: process.env.READ_TOKEN, login: args.login, sensitive: true, asViewer: true });
+    if (own) itemised = { calendarTotal: own.calendarTotal, restricted: own.restricted, byType: own.byType };
   }
   const stack = await fetchStack({ sources: stackSources(), login: args.login, now, timeZone: PROFILE.timeZone });
   const readTokenScopes = process.env.READ_TOKEN ? await tokenScopes(process.env.READ_TOKEN) : undefined;

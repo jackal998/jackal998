@@ -43,6 +43,27 @@ test('fetchActivity reads the past year of contributions in one query', async ()
   });
 });
 
+test('a read token reads its owner\'s activity as the viewer, and only its owner\'s', async () => {
+  const collection = {
+    contributionCalendar: { totalContributions: 40, weeks: [] },
+    restrictedContributionsCount: 0,
+    totalCommitContributions: 30,
+    totalPullRequestContributions: 6,
+    totalPullRequestReviewContributions: 3,
+    totalIssueContributions: 1,
+    totalRepositoryContributions: 0,
+  };
+  globalThis.fetch = async (url, init) => {
+    const { query, variables } = JSON.parse(init.body);
+    assert.match(query, /viewer \{ login/);
+    assert.deepEqual(variables, {});
+    return json({ data: { viewer: { login: 'Someone', contributionsCollection: collection } } });
+  };
+  const own = await fetchActivity({ token: 't', login: 'someone', asViewer: true });
+  assert.deepEqual(own.byType, { commits: 30, pullRequests: 6, reviews: 3, issues: 1, repositories: 0 });
+  assert.equal(await fetchActivity({ token: 't', login: 'other', asViewer: true }), null);
+});
+
 test('unknown user is an error', async () => {
   globalThis.fetch = async () => json({ data: { user: null } });
   await assert.rejects(fetchActivity({ token: 't', login: 'ghost' }), /"ghost" not found/);

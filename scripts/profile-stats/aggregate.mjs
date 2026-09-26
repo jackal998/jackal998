@@ -38,8 +38,9 @@ const WEEKDAYS = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDA
 const weekdayOf = (date) => new Date(`${date}T00:00:00Z`).getUTCDay();
 
 // The contribution calendar's days (private contributions included, anonymously)
-// as weekly totals and a few habits.
-export function summarizeCalendar(days) {
+// as weekly totals and a few habits. The calendar starts on a Sunday, a few
+// days more than a year back; the habits only look at the last `windowDays`.
+export function summarizeCalendar(days, { windowDays = 365 } = {}) {
   const sorted = [...days].sort((a, b) => a.date.localeCompare(b.date));
   // Calendar weeks start on Sunday. A week that holds the 1st of a month
   // carries that month for the axis.
@@ -51,21 +52,22 @@ export function summarizeCalendar(days) {
     if (day.date.endsWith('-01')) week.month = Number(day.date.slice(5, 7)) - 1;
   }
 
+  const recent = sorted.slice(-windowDays);
   let longestStreak = 0;
   let run = 0;
-  for (const day of sorted) {
+  for (const day of recent) {
     run = day.count > 0 ? run + 1 : 0;
     longestStreak = Math.max(longestStreak, run);
   }
   // Today may simply not have started yet, so a quiet today does not end the streak.
   let currentStreak = 0;
-  let i = sorted.length - 1;
-  if (i >= 0 && sorted[i].count === 0) i--;
-  for (; i >= 0 && sorted[i].count > 0; i--) currentStreak++;
+  let i = recent.length - 1;
+  if (i >= 0 && recent[i].count === 0) i--;
+  for (; i >= 0 && recent[i].count > 0; i--) currentStreak++;
 
   const byWeekday = Array(7).fill(0);
   let busiestDay = null;
-  for (const day of sorted) {
+  for (const day of recent) {
     byWeekday[weekdayOf(day.date)] += day.count;
     if (day.count > 0 && (!busiestDay || day.count > busiestDay.count)) busiestDay = day;
   }
@@ -73,8 +75,8 @@ export function summarizeCalendar(days) {
 
   return {
     weeks,
-    days: sorted.length,
-    activeDays: sorted.filter((day) => day.count > 0).length,
+    days: recent.length,
+    activeDays: recent.filter((day) => day.count > 0).length,
     longestStreak,
     currentStreak,
     busiestDay,

@@ -97,6 +97,9 @@ test('calendar weeks, streaks and the busiest days', () => {
   const full = summarizeCalendar(raw.activity.days);
   assert.equal(full.weeks.reduce((acc, w) => acc + w.count, 0), 1864);
   assert.equal(full.weeks.filter((w) => w.month !== null).length, 12);
+  // 53 calendar weeks, but the habits only cover the past year.
+  assert.equal(raw.activity.days.length, 371);
+  assert.equal(full.days, 365);
 });
 
 test('lines are also attributed to the kind of repository they were changed in', () => {
@@ -143,6 +146,7 @@ test('receipts print the numbers, escape names and never print NaN', () => {
       assert.match(activity, />1,864</);
       assert.match(activity, />NO\. 001864</);
       assert.match(activity, />PULL REQUESTS</);
+      assert.match(activity, />BY TYPE</);
       assert.match(activity, />PRIVATE, NOT ITEMISED</);
       assert.match(activity, />GMT\+8</);
       assert.match(activity, />15:00-16:00</);
@@ -152,6 +156,10 @@ test('receipts print the numbers, escape names and never print NaN', () => {
       assert.match(header, />Octo Cat</);
     }
   }
+  // Nothing private itemised: the types are the public ones, and private is not repeated.
+  const publicTypes = renderReceipts(buildStats({ ...raw, itemised: undefined }), 'light').activity;
+  assert.match(publicTypes, />PUBLIC, BY TYPE</);
+  assert.doesNotMatch(publicTypes, /NOT ITEMISED/);
   const stats = buildStats(raw);
   assert.match(renderReceipts(stats, 'light').stack, />public \+ private repositories</);
   assert.match(renderReceipts(stats, 'light').stack, />\+140,000</);
@@ -165,6 +173,7 @@ test('receipts without any code changes or activity say so', () => {
   empty.activity.byType = { commits: 0, pullRequests: 0, reviews: 0, issues: 0, repositories: 0 };
   delete empty.itemised;
   const { activity, stack } = renderReceipts(buildStats(empty), 'light');
+  assert.match(activity, />PUBLIC, BY TYPE</);
   assert.match(stack, /NO CODE CHANGES FOUND/);
   assert.match(stack, />public repositories only</);
   assert.doesNotMatch(stack, />SOURCE</);
