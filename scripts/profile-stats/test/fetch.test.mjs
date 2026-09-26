@@ -56,6 +56,7 @@ function fakeGitHub({ failWith, unreadable = {} } = {}) {
       ] },
       { sha: 'a2', date: '2026-02-03T00:00:00Z', parents: 2, files: [{ filename: 'app/models/invoice.rb', additions: 30, deletions: 10 }] },
       { sha: 'a3', date: '2026-01-10T00:00:00Z', parents: 1, files: [{ filename: 'lib/tasks/x.rake', additions: 5000, deletions: 0 }] },
+      { sha: 'a4', date: '2026-01-05T00:00:00Z', parents: 1, files: [{ filename: 'app/old.rb', additions: 0, deletions: 0 }] },
     ],
     'me/tool': [
       { sha: 'b1', date: '2026-02-02T00:00:00Z', parents: 1, files: [{ filename: 'src/main.py', additions: 12, deletions: 3 }] },
@@ -112,7 +113,7 @@ test('fetchStack counts lines per language in the user\'s own commits', async ()
   // Merge commit a2 is skipped, db/schema.rb is generated, the 5000-line rake file is capped.
   assert.deepEqual(stack.languages, { Ruby: 40 + 1000, 'HTML+ERB': 10, Python: 15 });
   assert.equal(stack.lines, 1065);
-  assert.equal(stack.commits, 3);
+  assert.equal(stack.commits, 4); // includes a4, a rename that changes no lines
   assert.equal(stack.repos, 2);
   assert.equal(stack.privateRepos, 1);
   assert.equal(stack.capped, false);
@@ -121,12 +122,12 @@ test('fetchStack counts lines per language in the user\'s own commits', async ()
   assert.deepEqual(seen.lists.sort(), ['work:acme/billing', 'work:me/tool']);
   assert.ok(seen.detail.every((d) => d.startsWith('work:')));
   assert.deepEqual(stack.log, [
-    { label: 'work', repos: 2, privateRepos: 1, skipped: 0, ssoBlocked: 0, commits: 3 },
+    { label: 'work', repos: 2, privateRepos: 1, skipped: 0, ssoBlocked: 0, commits: 4 },
     { label: 'default', repos: 0, privateRepos: 0, skipped: 0, ssoBlocked: 0, commits: 0 },
   ]);
   // GitHub's own view for comparison: repo language bytes weighted by my commits.
   assert.deepEqual(Object.fromEntries(Object.entries(stack.estimate).map(([k, v]) => [k, +v.toFixed(3)])),
-    { Ruby: 2.7, JavaScript: 0.3, Python: 1 });
+    { Ruby: 3.6, JavaScript: 0.4, Python: 1 });
   // Private repositories and their (non-personal) owners are handed to the leak guard.
   assert.deepEqual(stack.secretNames.sort(), ['acme', 'acme/billing']);
 });
@@ -137,8 +138,9 @@ test('commits are also summarised per commit and per kind of repository', async 
   // a1: 40 Ruby + 10 ERB lines -> 0.8 / 0.2 of a commit; a3: all Ruby; b1: all Python.
   assert.deepEqual(stack.perCommit, { Ruby: 1.8, 'HTML+ERB': 0.2, Python: 1 });
   assert.deepEqual(Object.keys(stack.categories).sort(), ['organisation private', 'personal public']);
+  assert.ok(Object.values(stack.perCommit).every(Number.isFinite));
   assert.deepEqual(stack.categories['organisation private'], {
-    commits: 2, lines: 1050, languages: { Ruby: 1040, 'HTML+ERB': 10 }, perCommit: { Ruby: 1.8, 'HTML+ERB': 0.2 },
+    commits: 3, lines: 1050, languages: { Ruby: 1040, 'HTML+ERB': 10 }, perCommit: { Ruby: 1.8, 'HTML+ERB': 0.2 },
   });
   assert.equal(stack.categories['personal public'].commits, 1);
 });

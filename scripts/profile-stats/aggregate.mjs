@@ -39,9 +39,9 @@ export function activityRows(years, threshold = 100) {
 // { language: weight } -> the top languages by share, the tail folded into
 // "Other" (only when it holds more than one language).
 export function rankLanguages(weights, { top = 6 } = {}) {
-  const total = Object.values(weights).reduce((acc, n) => acc + n, 0);
-  const ranked = Object.entries(weights)
-    .filter(([, lines]) => lines > 0)
+  const positive = Object.entries(weights).filter(([, lines]) => lines > 0);
+  const total = positive.reduce((acc, [, n]) => acc + n, 0);
+  const ranked = positive
     .map(([name, lines]) => ({ name, lines, share: lines / total }))
     .sort((a, b) => b.lines - a.lines || a.name.localeCompare(b.name));
   const shown = ranked.length > top + 1 ? ranked.slice(0, top) : ranked;

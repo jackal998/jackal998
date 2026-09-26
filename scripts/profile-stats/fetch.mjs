@@ -299,6 +299,8 @@ export async function fetchStack({ sources, login, now = new Date(), windowDays 
         addTo(mine, language, n);
         commitLines += n;
       }
+      // A commit that only renames or moves files changes no lines.
+      if (!commitLines) return;
       for (const [language, n] of Object.entries(mine)) {
         addTo(languages, language, n);
         addTo(category.languages, language, n);
