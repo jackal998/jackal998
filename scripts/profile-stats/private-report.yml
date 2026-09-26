@@ -1,0 +1,81 @@
+# The private weekly report behind the profile receipts.
+#
+# This file does not run here. Copy it to .github/workflows/weekly-report.yml
+# in a PRIVATE repository (jackal998/profile-report) and add the READ_TOKEN
+# secret there. Each week it runs the generator from the public profile
+# repository in report view, keeps the report in reports/<date>/ and opens an
+# issue assigned to the owner, so GitHub sends a notification.
+#
+# Never run the report view in a public repository: its files and its Actions
+# logs would be public too.
+
+name: Weekly report
+
+on:
+  schedule:
+    - cron: "7 0 * * 1" # Mondays, 08:07 Asia/Taipei
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Generator branch or commit in jackal998/jackal998
+        default: master
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: weekly-report
+  cancel-in-progress: false
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check out the generator
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: jackal998/jackal998
+          ref: ${{ inputs.ref || 'master' }}
+          path: generator
+          persist-credentials: false
+
+      - name: Test the generator
+        run: node --test generator/scripts/profile-stats/test/*.test.mjs
+
+      - name: Generate the report
+        run: |
+          echo "REPORT_DIR=reports/$(TZ=Asia/Taipei date +%F)" >> "$GITHUB_ENV"
+          node generator/scripts/profile-stats/main.mjs --view report --out "reports/$(TZ=Asia/Taipei date +%F)"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          READ_TOKEN: ${{ secrets.READ_TOKEN }}
+          PROFILE_LOGIN: ${{ github.repository_owner }}
+
+      - name: Keep the report
+        run: |
+          git add "$REPORT_DIR"
+          if git diff --cached --quiet; then
+            echo "Report unchanged."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Weekly report ${REPORT_DIR#reports/}"
+          git pull --rebase origin "$GITHUB_REF_NAME"
+          git push origin "HEAD:$GITHUB_REF_NAME"
+
+      - name: Open the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "Full receipts: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/tree/${GITHUB_REF_NAME}/${REPORT_DIR}"
+            echo
+            cat "$REPORT_DIR/issue.md"
+          } > "$RUNNER_TEMP/body.md"
+          gh issue create --title "$(cat "$REPORT_DIR/title.txt")" --body-file "$RUNNER_TEMP/body.md" \
+            --assignee "$GITHUB_REPOSITORY_OWNER"

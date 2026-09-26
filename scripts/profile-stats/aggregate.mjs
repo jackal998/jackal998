@@ -118,6 +118,29 @@ export function summarizeSources(categories = {}, totalLines) {
   });
 }
 
+// Work, side projects and open source, each with its languages ranked: the
+// resume-style view of where the lines were written.
+export const FOCUS = {
+  work: ['organisation private'],
+  side: ['personal private', 'personal public'],
+  openSource: ['public, other owners'],
+};
+
+export function summarizeFocus(categories = {}) {
+  return Object.entries(FOCUS).flatMap(([key, kinds]) => {
+    const languages = {};
+    let commits = 0;
+    for (const kind of kinds) {
+      const category = categories[kind];
+      if (!category) continue;
+      commits += category.commits;
+      for (const [name, lines] of Object.entries(category.languages)) languages[name] = (languages[name] ?? 0) + lines;
+    }
+    const { items } = rankLanguages(languages, { top: 3 });
+    return commits > 0 ? [{ key, commits, languages: items }] : [];
+  });
+}
+
 export function summarizeStack(stack, { top = 6 } = {}) {
   const hours = stack.hours ?? Array(24).fill(0);
   const busiest = Math.max(...hours);
@@ -132,20 +155,48 @@ export function summarizeStack(stack, { top = 6 } = {}) {
     includesPrivate: stack.privateRepos > 0,
     capped: stack.capped,
     sources: summarizeSources(stack.categories, stack.lines),
+    focus: summarizeFocus(stack.categories),
     hours,
     peakHour: busiest > 0 ? hours.indexOf(busiest) : null,
     timeZone: stack.timeZone ?? 'UTC',
   };
 }
 
+// The last seven days against the seven before, and the weekly average over
+// the year: contributions from the calendar, commits and lines from the stack.
+export function summarizeWeek(days, byDate = {}, today) {
+  const sorted = [...days].sort((a, b) => a.date.localeCompare(b.date));
+  const sum = (list) => list.reduce((acc, day) => acc + day.count, 0);
+  const dayMs = 86_400_000;
+  const dates = (from, to) => Array.from({ length: to - from }, (_, i) =>
+    new Date(Date.parse(`${today}T00:00:00Z`) - (from + i) * dayMs).toISOString().slice(0, 10));
+  const stackSum = (list, field) => list.reduce((acc, date) => acc + (byDate[date]?.[field] ?? 0), 0);
+  const allStack = (field) => Object.values(byDate).reduce((acc, day) => acc + day[field], 0);
+  return {
+    contributions: { last: sum(sorted.slice(-7)), previous: sum(sorted.slice(-14, -7)), average: sum(sorted.slice(-365)) / 52 },
+    commits: { last: stackSum(dates(0, 7), 'commits'), previous: stackSum(dates(7, 14), 'commits'), average: allStack('commits') / 52 },
+    lines: { last: stackSum(dates(0, 7), 'lines'), previous: stackSum(dates(7, 14), 'lines'), average: allStack('lines') / 52 },
+  };
+}
+
+// Every detail the fetchers collected. What each audience sees is decided
+// later, by views.mjs; nothing here is meant to be published as is.
 export function buildStats(raw) {
+  const localToday = new Intl.DateTimeFormat('en-CA', { timeZone: raw.stack.timeZone ?? 'UTC' }).format(new Date(raw.generatedAt));
   return {
     profile: raw.profile,
     login: raw.login,
     generatedAt: raw.generatedAt,
     contributions: summarizeContributions(raw.activity),
-    types: summarizeTypes(raw.types, raw.stack),
+    types: raw.types ? summarizeTypes(raw.types, raw.stack) : null,
     calendar: summarizeCalendar(raw.activity.days),
     stack: summarizeStack(raw.stack),
+    week: summarizeWeek(raw.activity.days, raw.stack.byDate, localToday),
+    health: {
+      readTokenScopes: raw.readTokenScopes,
+      sources: raw.stack.log ?? [],
+      capped: Boolean(raw.stack.capped),
+      searchIncomplete: Boolean(raw.types?.incomplete),
+    },
   };
 }

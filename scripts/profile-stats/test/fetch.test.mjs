@@ -148,6 +148,13 @@ test('fetchStack counts lines per language in the user\'s own commits', async ()
   assert.equal(stack.commits, 4); // includes a4, a rename that changes no lines
   // Every commit listed, merge a2 included, as GitHub counts contributions.
   assert.deepEqual(stack.commitsByVisibility, { public: 1, private: 4 });
+  // Commits read and lines changed per date (UTC here), merge a2 left out.
+  assert.deepEqual(stack.byDate, {
+    '2026-02-01': { commits: 1, lines: 50 },
+    '2026-02-02': { commits: 1, lines: 15 },
+    '2026-01-10': { commits: 1, lines: 1000 },
+    '2026-01-05': { commits: 1, lines: 0 },
+  });
   assert.equal(stack.repos, 2);
   assert.equal(stack.reposWithCommits, 2);
   assert.equal(stack.privateRepos, 1);

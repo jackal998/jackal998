@@ -2,11 +2,14 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import {
-  buildStats, rankLanguages, summarizeCalendar, summarizeContributions, summarizeSources, summarizeStack, summarizeTypes,
+  buildStats, rankLanguages, summarizeCalendar, summarizeContributions, summarizeFocus, summarizeSources, summarizeStack,
+  summarizeTypes, summarizeWeek,
 } from '../aggregate.mjs';
 import { assertNoLeak, findLeaks } from '../guard.mjs';
 import { languageOf, linesChanged, splitChanged } from '../languages.mjs';
 import { escapeXml, formatShare, measure, renderHeader, renderReceipts } from '../render.mjs';
+import { renderReport, sparkline } from '../report.mjs';
+import { publicView } from '../views.mjs';
 
 const raw = JSON.parse(readFileSync(new URL('./fixture.json', import.meta.url), 'utf8'));
 
@@ -194,4 +197,77 @@ test('leak guard catches private names in any case and never repeats them', () =
     error.message === 'Refusing to publish receipt: it mentions 1 private name(s)');
   const { activity, stack } = renderReceipts(buildStats(raw), 'light');
   assert.doesNotThrow(() => assertNoLeak('receipts', activity + stack, names));
+});
+
+test('work, side projects and open source each get their main languages', () => {
+  const focus = summarizeFocus(raw.stack.categories);
+  assert.deepEqual(focus.map((g) => [g.key, g.commits, g.languages[0].name]), [['work', 900, 'Ruby'], ['side', 340, 'Python']]);
+  // Side projects add up my private and public repositories.
+  assert.deepEqual(focus[1].languages.slice(0, 2).map((l) => [l.name, l.share]), [['Python', 0.6], ['TypeScript', 0.24]]);
+});
+
+test('the week is compared with the one before and the yearly average', () => {
+  const days = Array.from({ length: 21 }, (_, i) => ({
+    date: new Date(Date.parse('2026-03-21T00:00:00Z') - (20 - i) * 86_400_000).toISOString().slice(0, 10),
+    count: i >= 14 ? 3 : 1,
+  }));
+  const week = summarizeWeek(days, { '2026-03-21': { commits: 2, lines: 50 }, '2026-03-14': { commits: 4, lines: 10 }, '2026-03-13': { commits: 1, lines: 5 } }, '2026-03-21');
+  assert.deepEqual(week.contributions, { last: 21, previous: 7, average: 35 / 52 });
+  assert.deepEqual([week.commits.last, week.commits.previous], [2, 5]);
+  assert.deepEqual([week.lines.last, week.lines.previous], [50, 15]);
+});
+
+// Everything the public view must never print or log.
+const PRIVATE_DETAIL = /BY TYPE|PRS REVIEWED|COMMIT HOURS|PEAK HOUR|BUSIEST|CURRENT STREAK|ADDED|REMOVED|LINES CHANGED|>SOURCE<|COMMITS READ|REPOSITORIES|LINES PER COMMIT|mostly/;
+
+test('the public view keeps the résumé and drops private detail', () => {
+  const stats = buildStats(raw);
+  const view = publicView(stats);
+  assert.deepEqual(Object.keys(view).sort(), ['calendar', 'contributions', 'generatedAt', 'login', 'profile', 'stack']);
+  assert.deepEqual(Object.keys(view.calendar).sort(), ['activeDays', 'days', 'longestStreak', 'weeks']);
+  assert.deepEqual(Object.keys(view.stack).sort(), ['focus', 'includesPrivate', 'items', 'other']);
+  assert.deepEqual(view.stack.items[0], { name: 'Ruby', share: 0.63 });
+  assert.deepEqual(view.stack.focus, [{ key: 'work', languages: ['Ruby'] }, { key: 'side', languages: ['Python', 'TypeScript'] }]);
+  // No private counts survive anywhere in it: private commits, line totals, reviews.
+  const json = JSON.stringify(view);
+  for (const detail of ['1130', '126000', '200000', '140000', '"95"', 'hours', 'busiest', 'lines']) assert.ok(!json.includes(detail), detail);
+
+  for (const theme of ['light', 'dark']) {
+    const { activity, stack } = renderReceipts(view, theme);
+    assert.equal(heightOf(activity), heightOf(stack));
+    for (const svg of [activity, stack]) {
+      assert.doesNotMatch(printed(svg), PRIVATE_DETAIL);
+      assert.doesNotMatch(printed(svg), /NaN|undefined|Infinity|null/);
+    }
+    assert.match(activity, />1,864</);
+    assert.match(activity, />LONGEST STREAK</);
+    assert.match(stack, />63\.0%</);
+    assert.doesNotMatch(stack, />126,000</);
+    assert.match(stack, />FOCUS</);
+    assert.match(stack, />AT WORK</);
+    assert.match(stack, />PYTHON, TYPESCRIPT</);
+  }
+  // A focus group with too few commits says nothing.
+  const tiny = structuredClone(stats);
+  tiny.stack.focus = [{ key: 'openSource', commits: 3, languages: [{ name: 'Go', share: 1 }] }];
+  assert.deepEqual(publicView(tiny).stack.focus, []);
+});
+
+test('the private report carries every detail', () => {
+  const { title, markdown } = renderReport(buildStats(raw));
+  assert.equal(title, 'Weekly report 2026-09-26');
+  for (const text of ['## This week', '| Commits read | 35 | 21 | +67% |', '| Pull requests reviewed | 12 | 95 |',
+    'Longest streak: 16 days; current streak: 4 days', 'Busiest weekday: Friday', 'peak 15:00-16:00',
+    '| Ruby | 126,000 | 63.0% |', '+140,000 / -60,000', '| Organisation repositories, private | 900 | 150,000 | 75.0% | Ruby 80.0% |',
+    'READ_TOKEN: not set']) {
+    assert.ok(markdown.includes(text), text);
+  }
+  assert.doesNotMatch(markdown, /NaN|undefined|Infinity|null/);
+  assert.doesNotMatch(markdown, /<img/);
+  assert.match(renderReport(buildStats(raw), { images: true }).markdown, /<img src="activity-light\.svg"/);
+});
+
+test('sparklines scale to the largest value and leave zeros blank', () => {
+  assert.equal(sparkline([0, 1, 4, 8]), ' ▂▅█');
+  assert.equal(sparkline([0, 0]), '  ');
 });
