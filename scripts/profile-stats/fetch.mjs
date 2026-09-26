@@ -55,7 +55,10 @@ async function request(token, url, init, { sensitive }) {
   throw lastError;
 }
 
-async function graphql(token, query, variables, { sensitive = false } = {}) {
+// The read token is a classic token whose `repo` scope could also write, so
+// this client refuses to: GraphQL queries only, REST GET only.
+export async function graphql(token, query, variables, { sensitive = false } = {}) {
+  if (/^\s*mutation\b/.test(query)) throw new Error('profile-stats is read-only: GraphQL mutations are not allowed');
   const res = await request(token, `${API}/graphql`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -208,6 +211,9 @@ export async function fetchStack({ sources, login, now = new Date(), windowDays 
   }
 
   const languages = {};
+  // For comparison only: what GitHub's own data suggests - each repository's
+  // language mix (by bytes, as on its language bar) weighted by my commit count.
+  const estimate = {};
   let commits = 0;
   let lines = 0;
   let capped = false;
@@ -215,7 +221,15 @@ export async function fetchStack({ sources, login, now = new Date(), windowDays 
 
   for (const { source, repos } of perSource) {
     let listed = [];
-    for (const repo of repos) listed.push(...await commitsIn(source, repo, login, from, to));
+    for (const repo of repos) {
+      const found = await commitsIn(source, repo, login, from, to);
+      listed.push(...found);
+      if (!found.length) continue;
+      const bytes = await rest(source.token, `/repos/${repoPath(repo.nameWithOwner)}/languages`, source);
+      const total = Object.values(bytes).reduce((acc, n) => acc + n, 0);
+      if (!total) continue;
+      for (const [name, n] of Object.entries(bytes)) estimate[name] = (estimate[name] ?? 0) + (n / total) * found.length;
+    }
     listed.sort((a, b) => String(b.date).localeCompare(String(a.date)));
     if (listed.length > source.maxCommits) {
       listed = listed.slice(0, source.maxCommits);
@@ -244,6 +258,26 @@ export async function fetchStack({ sources, login, now = new Date(), windowDays 
     });
   }
 
-  const privateRepos = [...claimed.values()].filter((r) => r.isPrivate).length;
-  return { from: from.toISOString(), to: to.toISOString(), commits, lines, languages, repos: claimed.size, privateRepos, capped, log };
+  const privateRepos = [...claimed.values()].filter((r) => r.isPrivate);
+  // Names that must never reach the receipt or the logs; see guard.mjs.
+  const secretNames = new Set();
+  for (const r of privateRepos) {
+    secretNames.add(r.nameWithOwner);
+    const owner = r.nameWithOwner.split('/')[0];
+    if (owner.toLowerCase() !== login.toLowerCase()) secretNames.add(owner);
+  }
+
+  return {
+    from: from.toISOString(),
+    to: to.toISOString(),
+    commits,
+    lines,
+    languages,
+    estimate,
+    repos: claimed.size,
+    privateRepos: privateRepos.length,
+    capped,
+    log,
+    secretNames: [...secretNames],
+  };
 }

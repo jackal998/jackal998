@@ -10,8 +10,9 @@ on:
       - ".github/workflows/profile-stats.yml"
 
 # The job's own GITHUB_TOKEN reads public data and commits the receipt back.
-# Optional read-only secrets add private repositories to the language
-# breakdown; the script only ever logs and prints aggregated numbers.
+# The optional READ_TOKEN secret adds private repositories to the language
+# breakdown. It is handed to the one step that needs it, the script only ever
+# reads with it, and only aggregated numbers are logged or committed.
 permissions:
   contents: write
 
@@ -33,13 +34,13 @@ jobs:
         run: node scripts/profile-stats/main.mjs
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          READ_TOKEN_WORK: ${{ secrets.READ_TOKEN_WORK }}
-          READ_TOKEN_PERSONAL: ${{ secrets.READ_TOKEN_PERSONAL }}
+          READ_TOKEN: ${{ secrets.READ_TOKEN }}
           PROFILE_LOGIN: ${{ github.repository_owner }}
 
       - name: Commit changed receipt
         run: |
-          git add profile/
+          # Only the two receipt files, never anything else a run left behind.
+          git add profile/receipt-light.svg profile/receipt-dark.svg
           if git diff --cached --quiet; then
             echo "Receipt unchanged."
             exit 0

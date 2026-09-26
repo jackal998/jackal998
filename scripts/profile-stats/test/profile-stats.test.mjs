@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { activityRows, buildStats, summarizeContributions, summarizeStack } from '../aggregate.mjs';
+import { activityRows, buildStats, rankLanguages, summarizeContributions, summarizeStack } from '../aggregate.mjs';
+import { assertNoLeak, findLeaks } from '../guard.mjs';
 import { languageOf, linesChanged } from '../languages.mjs';
 import { escapeXml, formatShare, measure, renderReceipt } from '../render.mjs';
 
@@ -112,4 +113,19 @@ test('receipt without any code changes says so', () => {
   const svg = renderReceipt(buildStats(empty), 'light');
   assert.match(svg, /NO CODE CHANGES FOUND/);
   assert.match(svg, />PUBLIC ONLY</);
+});
+
+test('ranking folds the tail into Other only when it holds several languages', () => {
+  assert.equal(rankLanguages({ A: 5, B: 4, C: 3 }, { top: 2 }).other, null);
+  assert.deepEqual(rankLanguages({ A: 5, B: 4, C: 3, D: 3 }, { top: 2 }).other, { name: 'Other', lines: 6, share: 6 / 15, count: 2 });
+  assert.deepEqual(rankLanguages({}).items, []);
+});
+
+test('leak guard catches private names in any case and never repeats them', () => {
+  const names = ['acme/billing', 'acme'];
+  assert.deepEqual(findLeaks('Ruby 63% ... ACME/Billing', names), ['acme/billing', 'acme']);
+  assert.deepEqual(findLeaks('RUBY 63.0% PYTHON 15.0%', names), []);
+  assert.throws(() => assertNoLeak('receipt', 'made at Acme', names), (error) =>
+    error.message === 'Refusing to publish receipt: it mentions 1 private name(s)');
+  assert.doesNotThrow(() => assertNoLeak('receipt', renderReceipt(buildStats(raw), 'light'), names));
 });

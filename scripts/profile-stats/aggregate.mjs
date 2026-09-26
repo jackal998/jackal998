@@ -36,19 +36,26 @@ export function activityRows(years, threshold = 100) {
   ];
 }
 
-export function summarizeStack(stack, { top = 6 } = {}) {
-  const ranked = Object.entries(stack.languages)
+// { language: weight } -> the top languages by share, the tail folded into
+// "Other" (only when it holds more than one language).
+export function rankLanguages(weights, { top = 6 } = {}) {
+  const total = Object.values(weights).reduce((acc, n) => acc + n, 0);
+  const ranked = Object.entries(weights)
     .filter(([, lines]) => lines > 0)
-    .map(([name, lines]) => ({ name, lines, share: stack.lines ? lines / stack.lines : 0 }))
+    .map(([name, lines]) => ({ name, lines, share: lines / total }))
     .sort((a, b) => b.lines - a.lines || a.name.localeCompare(b.name));
-
-  // Fold the tail into "Other" only when it holds more than one language.
   const shown = ranked.length > top + 1 ? ranked.slice(0, top) : ranked;
   const rest = ranked.slice(shown.length);
   const otherLines = rest.reduce((acc, item) => acc + item.lines, 0);
   return {
     items: shown,
-    other: rest.length ? { name: 'Other', lines: otherLines, share: otherLines / stack.lines, count: rest.length } : null,
+    other: rest.length ? { name: 'Other', lines: otherLines, share: otherLines / total, count: rest.length } : null,
+  };
+}
+
+export function summarizeStack(stack, { top = 6 } = {}) {
+  return {
+    ...rankLanguages(stack.languages, { top }),
     commits: stack.commits,
     lines: stack.lines,
     includesPrivate: stack.privateRepos > 0,

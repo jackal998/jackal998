@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
-import { fetchActivity, fetchStack } from '../fetch.mjs';
+import { fetchActivity, fetchStack, graphql } from '../fetch.mjs';
 
 const realFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = realFetch; });
@@ -77,6 +77,8 @@ function fakeGitHub({ failWith } = {}) {
           { node_id: 'R_old', full_name: 'acme/legacy', private: true, pushed_at: '2019-01-01T00:00:00Z' }]
         : []);
     }
+    const langs = u.pathname.match(/^\/repos\/([^/]+\/[^/]+)\/languages$/);
+    if (langs) return json({ 'acme/billing': { Ruby: 9000, JavaScript: 1000 }, 'me/tool': { Python: 500 } }[langs[1]]);
     const list = u.pathname.match(/^\/repos\/([^/]+\/[^/]+)\/commits$/);
     if (list) {
       assert.equal(u.searchParams.get('author'), 'me');
@@ -117,6 +119,16 @@ test('fetchStack counts lines per language in the user\'s own commits', async ()
     { label: 'work', repos: 2, privateRepos: 1, commits: 3 },
     { label: 'default', repos: 0, privateRepos: 0, commits: 0 },
   ]);
+  // GitHub's own view for comparison: repo language bytes weighted by my commits.
+  assert.deepEqual(Object.fromEntries(Object.entries(stack.estimate).map(([k, v]) => [k, +v.toFixed(3)])),
+    { Ruby: 2.7, JavaScript: 0.3, Python: 1 });
+  // Private repositories and their (non-personal) owners are handed to the leak guard.
+  assert.deepEqual(stack.secretNames.sort(), ['acme', 'acme/billing']);
+});
+
+test('the client refuses to write, whatever the token could do', async () => {
+  globalThis.fetch = async () => { throw new Error('must not be called'); };
+  await assert.rejects(graphql('t', 'mutation { deleteRepository(input: {}) { clientMutationId } }', {}), /read-only/);
 });
 
 test('fetchStack keeps only the most recent commits past the cap', async () => {
