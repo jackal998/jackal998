@@ -56,7 +56,7 @@ test('types are searched for public and private work alike', async () => {
   });
   assert.equal(queries.length, 8);
   assert.ok(queries.includes('/search/issues is:pr author:me created:2025-03-01..2026-03-01 is:private'));
-  assert.ok(queries.includes('/search/issues is:pr reviewed-by:me -author:me updated:2025-03-01..2026-03-01 is:public'));
+  assert.ok(queries.includes('/search/issues is:pr reviewed-by:me -author:me created:2025-03-01..2026-03-01 is:public'));
   assert.ok(queries.includes('/search/repositories user:me created:2025-03-01..2026-03-01 is:private'));
 
   const publicOnly = await fetchTypes({ source: { token: 't' }, login: 'me', now: new Date('2026-03-01T00:00:00Z') });

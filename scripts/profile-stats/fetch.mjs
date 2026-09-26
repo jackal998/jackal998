@@ -143,8 +143,10 @@ export async function fetchTypes({ source, login, now = new Date(), windowDays =
   const searches = {
     pullRequests: ['/search/issues', `is:pr author:${login} created:${range}`],
     issues: ['/search/issues', `is:issue author:${login} created:${range}`],
-    // Pull requests, not individual reviews: search cannot count those.
-    reviews: ['/search/issues', `is:pr reviewed-by:${login} -author:${login} updated:${range}`],
+    // Pull requests, not individual reviews: search cannot count those, nor
+    // tell when a review was left. Opened in the window, like the others;
+    // `updated:` would also count old reviews on pull requests touched since.
+    reviews: ['/search/issues', `is:pr reviewed-by:${login} -author:${login} created:${range}`],
     repositories: ['/search/repositories', `user:${login} created:${range}`],
   };
   const result = { incomplete: false };
