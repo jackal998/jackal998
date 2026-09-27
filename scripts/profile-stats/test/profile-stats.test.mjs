@@ -259,7 +259,8 @@ test('the private report carries every detail', () => {
   for (const text of ['## This week', '| Commits read | 35 | 21 | +67% |', '| Pull requests reviewed | 12 | 95 |',
     'Longest streak: 16 days; current streak: 4 days', 'Busiest weekday: Friday', 'peak 15:00-16:00',
     '| Ruby | 126,000 | 63.0% |', '+140,000 / -60,000', '| Organisation repositories, private | 900 | 150,000 | 75.0% | Ruby 80.0% |',
-    'READ_TOKEN: not set']) {
+    '| Kind | Commits | Lines | Share | Main language |\n| --- | ---: | ---: | ---: | --- |',
+    'Source "work": 9 repositories read (9 private), 980 commits', 'READ_TOKEN: not set']) {
     assert.ok(markdown.includes(text), text);
   }
   assert.doesNotMatch(markdown, /NaN|undefined|Infinity|null/);

@@ -36,9 +36,10 @@ function change(last, previous) {
   return `${pct > 0 ? '+' : ''}${pct}%`;
 }
 
-const table = (head, rows) => [
+// Text columns left, number columns right: `align` has one letter per column.
+const table = (head, rows, align = `l${'r'.repeat(head.length - 1)}`) => [
   `| ${head.join(' | ')} |`,
-  `|${head.map((_, i) => (i === 0 ? ' --- ' : ' ---: ')).join('|')}|`,
+  `|${head.map((_, i) => (align[i] === 'r' ? ' ---: ' : ' --- ')).join('|')}|`,
   ...rows.map((row) => `| ${row.join(' | ')} |`),
 ].join('\n');
 
@@ -119,7 +120,7 @@ export function renderReport(stats, { images = false } = {}) {
       formatNumber(source.lines),
       formatShare(source.share),
       source.main ? `${source.main.name} ${formatShare(source.main.share)}` : '-',
-    ])));
+    ]), 'lrrrl'));
   }
   if (s.focus.length) {
     line();
@@ -136,8 +137,9 @@ export function renderReport(stats, { images = false } = {}) {
     line('- READ_TOKEN: not set, so private repositories are left out');
   }
   for (const source of health.sources) {
-    line(`- Source "${source.label}": ${source.repos} repositories read (${source.privateRepos} private), ${source.commits} commits` +
-      `${source.skipped ? `; ${source.skipped} unreadable${source.ssoBlocked ? ` (${source.ssoBlocked} need SSO authorisation)` : ''}` : ''}`);
+    line(`- Source "${source.label}": ${formatNumber(source.repos)} repositories read (${formatNumber(source.privateRepos)} private), ` +
+      `${formatNumber(source.commits)} commits` +
+      `${source.skipped ? `; ${formatNumber(source.skipped)} unreadable${source.ssoBlocked ? ` (${formatNumber(source.ssoBlocked)} need SSO authorisation)` : ''}` : ''}`);
   }
   if (health.capped) line('- Commit reading hit its cap: only the most recent commits were read.');
   if (health.searchIncomplete) line('- GitHub search returned incomplete results; the type counts may be low.');
