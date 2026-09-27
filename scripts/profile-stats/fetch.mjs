@@ -253,6 +253,7 @@ export async function fetchStack({ sources, login, now = new Date(), windowDays 
   const to = now;
   const from = new Date(now.getTime() - windowDays * DAY_MS);
   const hourOf = new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', hourCycle: 'h23' });
+  const dateOf = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' });
   const claimed = new Map();
   const perSource = [];
 
@@ -269,6 +270,7 @@ export async function fetchStack({ sources, login, now = new Date(), windowDays 
   let removed = 0;
   let capped = false;
   const hours = Array(24).fill(0);
+  const byDate = {}; // local date -> { commits, lines }, for week-over-week numbers
   const log = [];
   const withCommits = new Set(); // repositories whose commits were actually read
   const privateRead = new Set();
@@ -306,7 +308,9 @@ export async function fetchStack({ sources, login, now = new Date(), windowDays 
       if (!detail) return;
       if ((detail.parents?.length ?? 0) > 1) return; // merge commits repeat work already counted
       analyzed++;
+      const day = c.date ? (byDate[dateOf.format(new Date(c.date))] ??= { commits: 0, lines: 0 }) : { commits: 0, lines: 0 };
       if (c.date) hours[Number(hourOf.format(new Date(c.date))) % 24]++;
+      day.commits++;
       const category = (categories[categoryOf(c.repo, login)] ??= { commits: 0, lines: 0, languages: {} });
       category.commits++;
       for (const file of detail.files ?? []) {
@@ -319,6 +323,7 @@ export async function fetchStack({ sources, login, now = new Date(), windowDays 
         added += change.added;
         removed += change.removed;
         category.lines += n;
+        day.lines += n;
       }
     });
     commits += analyzed;
@@ -353,6 +358,7 @@ export async function fetchStack({ sources, login, now = new Date(), windowDays 
     languages,
     categories,
     hours,
+    byDate,
     timeZone,
     repos: claimed.size,
     reposWithCommits: withCommits.size,

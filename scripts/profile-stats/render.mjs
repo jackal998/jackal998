@@ -243,8 +243,16 @@ const SOURCE_LABELS = {
   'public, other owners': 'OTHER REPOS, PUBLIC',
 };
 
+const FOCUS_LABELS = {
+  work: 'AT WORK',
+  side: 'SIDE PROJECTS',
+  openSource: 'OPEN SOURCE',
+};
+
 const MONTHS = 'JFMAMJJASOND';
 
+// Each section prints only when the stats carry its data: the full stats print
+// everything, views.mjs decides what the public receipts get.
 function layoutActivity(stats, t) {
   const c = stats.contributions;
   const types = stats.types;
@@ -269,14 +277,19 @@ function layoutActivity(stats, t) {
   // The same types for public and private work, counted from the repositories;
   // the totals under them are GitHub's own.
   const countText = (n) => (n === null ? '-' : formatNumber(n));
-  p.y += 26; p.heading('BY TYPE', 'PRIVATE', 'PUBLIC');
-  p.y += 4;
-  for (const item of types.items) {
-    p.y += 20; p.item(TYPE_LABELS[item.key], countText(item.private), { mid: countText(item.public) });
+  if (types) {
+    p.y += 26; p.heading('BY TYPE', 'PRIVATE', 'PUBLIC');
+    p.y += 4;
+    for (const item of types.items) {
+      p.y += 20; p.item(TYPE_LABELS[item.key], countText(item.private), { mid: countText(item.public) });
+    }
+    p.y += 18; p.text(LEFT, 'counted from repositories; totals by GitHub', { cls: 'note' });
+    p.y += 12; p.dashed();
+    p.y += 22;
+  } else {
+    p.y += 30;
   }
-  p.y += 18; p.text(LEFT, 'counted from repositories; totals by GitHub', { cls: 'note' });
-  p.y += 12; p.dashed();
-  p.y += 22; p.item('PUBLIC', formatNumber(c.public));
+  p.item('PUBLIC', formatNumber(c.public));
   p.y += 20; p.item('PRIVATE', formatNumber(c.private));
   p.y += 12; p.double();
   p.y += 30; p.item('TOTAL', formatNumber(c.total), { bold: true, size: 20 });
@@ -286,31 +299,34 @@ function layoutActivity(stats, t) {
   p.y += 4;
   p.y += 20; p.item('ACTIVE DAYS', `${formatNumber(cal.activeDays)} OF ${formatNumber(cal.days)}`);
   p.y += 20; p.item('LONGEST STREAK', `${formatNumber(cal.longestStreak)} DAYS`);
-  p.y += 20; p.item('CURRENT STREAK', `${formatNumber(cal.currentStreak)} DAYS`);
+  if (cal.currentStreak !== undefined) { p.y += 20; p.item('CURRENT STREAK', `${formatNumber(cal.currentStreak)} DAYS`); }
   if (cal.busiestDay) { p.y += 20; p.item('BUSIEST DAY', `${cal.busiestDay.date} · ${formatNumber(cal.busiestDay.count)}`); }
   if (cal.busiestWeekday) { p.y += 20; p.item('BUSIEST WEEKDAY', cal.busiestWeekday); }
 
   // When the commits read for the stack were made, in the profile's time zone.
-  const zone = offsetName(s.timeZone, new Date(stats.generatedAt));
-  p.y += 34; p.heading('COMMIT HOURS', zone);
-  p.y += 4; p.columns(s.hours, {
-    height: 40,
-    labels: [0, 6, 12, 18].map((h) => ({ index: h, text: pad2(h) })),
-  });
-  if (s.peakHour !== null) {
-    p.y += 24; p.item('PEAK HOUR', `${pad2(s.peakHour)}:00-${pad2((s.peakHour + 1) % 24)}:00`);
+  const zone = s.hours ? offsetName(s.timeZone, new Date(stats.generatedAt)) : null;
+  if (s.hours) {
+    p.y += 34; p.heading('COMMIT HOURS', zone);
+    p.y += 4; p.columns(s.hours, {
+      height: 40,
+      labels: [0, 6, 12, 18].map((h) => ({ index: h, text: pad2(h) })),
+    });
+    if (s.peakHour !== null) {
+      p.y += 24; p.item('PEAK HOUR', `${pad2(s.peakHour)}:00-${pad2((s.peakHour + 1) % 24)}:00`);
+    }
   }
 
   const f = new Printer(t);
   if (c.private > 0 && stats.profile.footnote) { f.y = 11; f.center(`* ${stats.profile.footnote.toUpperCase()} *`, 'note'); }
 
-  const typeText = types.items.map((item) => `${TYPE_LABELS[item.key].toLowerCase()} ${countText(item.public)} public` +
+  const typeText = types?.items.map((item) => `${TYPE_LABELS[item.key].toLowerCase()} ${countText(item.public)} public` +
     `${item.private === null ? '' : ` and ${countText(item.private)} private`}`).join(', ');
   const desc = `${formatNumber(c.total)} GitHub contributions in the past 12 months ` +
-    `(${formatNumber(c.public)} public, ${formatNumber(c.private)} private). By type, counted from repositories: ${typeText}. ` +
+    `(${formatNumber(c.public)} public, ${formatNumber(c.private)} private). ` +
+    `${typeText ? `By type, counted from repositories: ${typeText}. ` : ''}` +
     `Active on ${cal.activeDays} of ${cal.days} days, longest streak ${cal.longestStreak} days` +
     `${cal.busiestWeekday ? `, busiest on ${cal.busiestWeekday.toLowerCase()}s` : ''}. ` +
-    `${s.peakHour !== null ? `Most commits between ${pad2(s.peakHour)}:00 and ${pad2((s.peakHour + 1) % 24)}:00 (${zone}). ` : ''}` +
+    `${s.hours && s.peakHour !== null ? `Most commits between ${pad2(s.peakHour)}:00 and ${pad2((s.peakHour + 1) % 24)}:00 (${zone}). ` : ''}` +
     `Updated ${stats.generatedAt.slice(0, 10)}.`;
 
   return { body: p, footer: f, footerHeight: f.y + 4, title: `${stats.profile.name} - GitHub activity`, desc };
@@ -319,6 +335,7 @@ function layoutActivity(stats, t) {
 function layoutStack(stats, t) {
   const s = stats.stack;
   const p = new Printer(t);
+  const withLines = s.lines !== undefined;
 
   p.y = 50; p.center('STACK', 'title');
   p.y += 22; p.center('LINES I CHANGED', 'role');
@@ -329,21 +346,24 @@ function layoutStack(stats, t) {
   p.y += 12; p.dashed();
 
   // Languages of the lines this person changed in their own commits.
-  p.y += 26; p.heading('LANGUAGE', 'SHARE', 'LINES');
+  p.y += 26; p.heading('LANGUAGE', 'SHARE', withLines ? 'LINES' : null);
   p.y += 4;
   if (!rows.length) { p.y += 24; p.center('NO CODE CHANGES FOUND', 'small dim'); }
   for (const row of rows) {
-    p.y += 24; p.item(row.name.toUpperCase(), formatShare(row.share), { mid: formatNumber(row.lines), bar: row.share });
+    p.y += 24; p.item(row.name.toUpperCase(), formatShare(row.share), { mid: withLines ? formatNumber(row.lines) : null, bar: row.share });
   }
   p.y += 22; p.dashed();
-  p.y += 22; p.item('ADDED', `+${formatNumber(s.added)}`);
-  p.y += 20; p.item('REMOVED', `-${formatNumber(s.removed)}`);
-  p.y += 12; p.double();
-  p.y += 28; p.item('LINES CHANGED', formatNumber(s.lines), { bold: true, size: 18 });
-  p.y += 12; p.double();
+  if (withLines) {
+    p.y += 22; p.item('ADDED', `+${formatNumber(s.added)}`);
+    p.y += 20; p.item('REMOVED', `-${formatNumber(s.removed)}`);
+    p.y += 12; p.double();
+    p.y += 28; p.item('LINES CHANGED', formatNumber(s.lines), { bold: true, size: 18 });
+    p.y += 12; p.double();
+  }
 
-  // Where those lines were changed, by kind of repository - never by name.
-  if (s.sources.length) {
+  // Where those lines were changed, by kind of repository - never by name. The
+  // full stats count them; the résumé only names the main languages.
+  if (s.sources?.length) {
     p.y += 34; p.heading('SOURCE', 'LINES', 'COMMITS');
     p.y += 4;
     for (const source of s.sources) {
@@ -351,10 +371,18 @@ function layoutStack(stats, t) {
       if (source.main) { p.y += 15; p.text(LEFT + 12, `mostly ${source.main.name}, ${formatShare(source.main.share)}`, { cls: 'note' }); }
     }
     p.y += 16; p.dashed();
+  } else if (s.focus?.length) {
+    p.y += 26; p.heading('FOCUS', 'MAIN LANGUAGES');
+    p.y += 4;
+    for (const group of s.focus) {
+      p.y += 22; p.item(FOCUS_LABELS[group.key], group.languages.join(', ').toUpperCase());
+    }
   }
-  p.y += 22; p.item('COMMITS READ', formatNumber(s.commits));
-  p.y += 20; p.item('REPOSITORIES', s.privateRepos ? `${formatNumber(s.repos)} (${formatNumber(s.privateRepos)} PRIVATE)` : formatNumber(s.repos));
-  p.y += 20; p.item('LINES PER COMMIT', s.commits ? formatNumber(Math.round(s.lines / s.commits)) : '0');
+  if (s.commits !== undefined) {
+    p.y += 22; p.item('COMMITS READ', formatNumber(s.commits));
+    p.y += 20; p.item('REPOSITORIES', s.privateRepos ? `${formatNumber(s.repos)} (${formatNumber(s.privateRepos)} PRIVATE)` : formatNumber(s.repos));
+    p.y += 20; p.item('LINES PER COMMIT', s.commits ? formatNumber(Math.round(s.lines / s.commits)) : '0');
+  }
 
   const f = new Printer(t);
   f.y = 50; f.text(WIDTH / 2, barcodeText(stats.login), { anchor: 'middle', cls: 'barcode' });
@@ -362,11 +390,13 @@ function layoutStack(stats, t) {
   f.y += 18; f.center('printed daily from GitHub data', 'note');
 
   const stackText = rows.map((row) => `${row.name} ${formatShare(row.share)}`).join(', ') || 'none';
-  const sourceText = s.sources.map((source) => `${SOURCE_LABELS[source.key].toLowerCase()} ${formatShare(source.share)}` +
+  const sourceText = s.sources?.map((source) => `${SOURCE_LABELS[source.key].toLowerCase()} ${formatShare(source.share)}` +
     `${source.main ? ` (mostly ${source.main.name})` : ''}`).join(', ');
-  const desc = `Languages of the ${formatNumber(s.lines)} lines I changed in the past 12 months ` +
-    `(${formatNumber(s.added)} added, ${formatNumber(s.removed)} removed, ${formatNumber(s.commits)} commits): ${stackText}. ` +
-    `${sourceText ? `By kind of repository: ${sourceText}. ` : ''}Updated ${stats.generatedAt.slice(0, 10)}.`;
+  const focusText = !sourceText && s.focus?.map((group) => `${FOCUS_LABELS[group.key].toLowerCase()} ${group.languages.join(' and ')}`).join(', ');
+  const desc = `Languages of the ${withLines ? `${formatNumber(s.lines)} ` : ''}lines I changed in the past 12 months` +
+    `${withLines ? ` (${formatNumber(s.added)} added, ${formatNumber(s.removed)} removed, ${formatNumber(s.commits)} commits)` : ''}: ${stackText}. ` +
+    `${sourceText ? `By kind of repository: ${sourceText}. ` : ''}` +
+    `${focusText ? `Main languages: ${focusText}. ` : ''}Updated ${stats.generatedAt.slice(0, 10)}.`;
 
   return { body: p, footer: f, footerHeight: f.y + 4, title: `${stats.profile.name} - languages I changed`, desc };
 }
