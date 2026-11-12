@@ -29,23 +29,23 @@ text { font-family: Receipt, ui-monospace, monospace; font-size: 13px; fill: #1d
 <text x="36" y="194" style="font-size:13px">PYTHON</text>
 <line x1="89.74" y1="191" x2="328.22" y2="191" stroke="#a39d8e" stroke-dasharray="1 4" stroke-linecap="round"/>
 <text x="374" y="194" text-anchor="end" style="font-size:13px">67.9%</text>
-<rect x="36" y="200" width="229.49" height="3" fill="#1d1b16"/>
+<rect x="36" y="200" width="229.55" height="3" fill="#1d1b16"/>
 <text x="36" y="218" style="font-size:13px">RUBY</text>
 <line x1="73.82" y1="215" x2="328.22" y2="215" stroke="#a39d8e" stroke-dasharray="1 4" stroke-linecap="round"/>
 <text x="374" y="218" text-anchor="end" style="font-size:13px">16.5%</text>
-<rect x="36" y="224" width="55.9" height="3" fill="#1d1b16"/>
+<rect x="36" y="224" width="55.82" height="3" fill="#1d1b16"/>
 <text x="36" y="242" style="font-size:13px">TYPESCRIPT</text>
 <line x1="121.56" y1="239" x2="336.18" y2="239" stroke="#a39d8e" stroke-dasharray="1 4" stroke-linecap="round"/>
 <text x="374" y="242" text-anchor="end" style="font-size:13px">7.3%</text>
-<rect x="36" y="248" width="24.53" height="3" fill="#1d1b16"/>
+<rect x="36" y="248" width="24.54" height="3" fill="#1d1b16"/>
 <text x="36" y="266" style="font-size:13px">HTML</text>
 <line x1="73.82" y1="263" x2="336.18" y2="263" stroke="#a39d8e" stroke-dasharray="1 4" stroke-linecap="round"/>
 <text x="374" y="266" text-anchor="end" style="font-size:13px">3.6%</text>
-<rect x="36" y="272" width="12.24" height="3" fill="#1d1b16"/>
+<rect x="36" y="272" width="12.25" height="3" fill="#1d1b16"/>
 <text x="36" y="290" style="font-size:13px">JAVASCRIPT</text>
 <line x1="121.56" y1="287" x2="336.18" y2="287" stroke="#a39d8e" stroke-dasharray="1 4" stroke-linecap="round"/>
 <text x="374" y="290" text-anchor="end" style="font-size:13px">2.6%</text>
-<rect x="36" y="296" width="8.84" height="3" fill="#1d1b16"/>
+<rect x="36" y="296" width="8.85" height="3" fill="#1d1b16"/>
 <text x="36" y="314" style="font-size:13px">SHELL</text>
 <line x1="81.78" y1="311" x2="336.18" y2="311" stroke="#a39d8e" stroke-dasharray="1 4" stroke-linecap="round"/>
 <text x="374" y="314" text-anchor="end" style="font-size:13px">1.7%</text>
